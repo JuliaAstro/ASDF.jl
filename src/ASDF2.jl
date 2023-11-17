@@ -308,7 +308,7 @@ function Base.getindex(ndarray::NDArray)
     @assert ndarray.source !== nothing
     data = read_block(ndarray.lazy_block_headers.block_headers[ndarray.source + 1])
     data = reinterpret(Type(ndarray.datatype), data)
-    # TODO: take strides and offset into account
+    # TODO: take datatype, byteorder, offset, and strides into account
     data = reshape(data, ndarray.shape...)
     return data
 end
@@ -341,7 +341,8 @@ function load_file(filename::AbstractString)
     asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-1.0.0"] = construct_yaml_ndarray
 
     metadata = YAML.load(io, asdf_constructors′)
-    lazy_block_headers.block_headers = find_all_blocks(io, position(io))
+    # lazy_block_headers.block_headers = find_all_blocks(io, position(io))
+    lazy_block_headers.block_headers = find_all_blocks(io)
     return ASDFFile(filename, metadata, lazy_block_headers)
 end
 
