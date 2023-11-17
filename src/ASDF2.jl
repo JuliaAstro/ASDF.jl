@@ -35,19 +35,21 @@ function find_next_block(io::IO, pos::Int64)
     sz = 1000 * 1000
     buffer = Array{UInt8}(undef, sz)
 
-    did_reach_eof = false
     block_range = nothing
-    while !did_reach_eof
+    while true
         seek(io, pos)
         nb = readbytes!(io, buffer)
-        did_reach_eof = eof(io)
         block_range = blockstart = findfirst(block_magic_token, @view buffer[1:(nb - 1)])
         block_range !== nothing && break
+        did_reach_eof = eof(io)
+        if did_reach_eof
+            # We found nothing
+            return nothing
+        end
         pos += nb - (length(block_magic_token) - 1)
     end
 
-    did_reach_eof && return nothing
-
+    # Found a block header
     block_start = pos + first(block_range) - 1
     return block_start
 end

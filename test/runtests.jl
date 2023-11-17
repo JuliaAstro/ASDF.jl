@@ -2,7 +2,8 @@ using ASDF2
 using Test
 using YAML
 
-asdf = ASDF2.load_file("/tmp/blue_voltage.00000000.asdf")
+# asdf = ASDF2.load_file("/tmp/blue_voltage.00000000.asdf")
+asdf = ASDF2.load_file("/tmp/blue_upchan_gain.00000000.asdf")
 println(YAML.write(asdf.metadata))
 
 map_tree(f, x) = f(x)
