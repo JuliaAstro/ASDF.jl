@@ -3,9 +3,10 @@ module ASDF2
 using Blosc
 # using Blosc2
 using CodecBzip2
-using MD5
-using YAML
 using CodecZlib
+using MD5
+using StridedViews
+using YAML
 
 ################################################################################
 
@@ -161,6 +162,8 @@ Byteorder(str::AbstractString) = string_byteorder_dict[str]
 Base.string(byteorder::Byteorder) = byteorder_string_dict[byteorder]
 Base.show(io::IO, byteorder::Byteorder) = show(io, string(byteorder))
 
+const host_byteorder = reinterpret(UInt8, UInt16[1])[1] == 1 ? Byteorder_little : Byteorder_big
+
 ################################################################################
 
 """
@@ -309,9 +312,16 @@ end
 function Base.getindex(ndarray::NDArray)
     @assert ndarray.source !== nothing
     data = read_block(ndarray.lazy_block_headers.block_headers[ndarray.source + 1])
+    # Handle strides and offset.
+    # Do this before imposing the datatype because strides are given in bytes.
+    data = StridedView(data, Int.(Tuple(ndarray.shape)), Int.(Tuple(ndarray.strides)), Int(ndarray.offset))
+    # Impose datatype
     data = reinterpret(Type(ndarray.datatype), data)
-    # TODO: take datatype, byteorder, offset, and strides into account
-    data = reshape(data, ndarray.shape...)
+    # Correct byteorder if necessary.
+    # Do this after imposing the datatype since byteorder depends on the datatype.
+    if ndarray.byteorder != host_byteorder
+        map!(bswap, data, data)
+    end
     return data
 end
 

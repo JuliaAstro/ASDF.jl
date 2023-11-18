@@ -1,8 +1,9 @@
 # ASDF2.jl
 
-## Notes
+A new [Advanced Scientific Data Format
+(ASDF)](https://asdf-standard.readthedocs.io/en/latest/index.html)
+package, written in Julia.
 
-```Julia
-julia> meta = ASDF2.load_file("/tmp/blue_voltage.00000000.asdf")
-julia> println(YAML.write(meta))
-```
+See [`ASDF.jl`](http://github.com/eschnett/ASDF.jl) for the older one
+which is based on the Python
+[`asdf`](https://github.com/spacetelescope/asdf) Python package.
