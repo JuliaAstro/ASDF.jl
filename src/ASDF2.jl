@@ -314,7 +314,11 @@ function Base.getindex(ndarray::NDArray)
     data = read_block(ndarray.lazy_block_headers.block_headers[ndarray.source + 1])
     # Handle strides and offset.
     # Do this before imposing the datatype because strides are given in bytes.
-    data = StridedView(data, Int.(Tuple(ndarray.shape)), Int.(Tuple(ndarray.strides)), Int(ndarray.offset))
+    typesize = sizeof(Type(ndarray.datatype))
+    size = reverse(ndarray.shape)
+    size[1] *= typesize
+    strides = reverse(ndarray.strides)
+    data = StridedView(data, Int.(Tuple(size)), Int.(Tuple(strides)), Int(ndarray.offset))
     # Impose datatype
     data = reinterpret(Type(ndarray.datatype), data)
     # Correct byteorder if necessary.
