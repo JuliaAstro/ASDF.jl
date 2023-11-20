@@ -315,12 +315,14 @@ function Base.getindex(ndarray::NDArray)
     # Handle strides and offset.
     # Do this before imposing the datatype because strides are given in bytes.
     typesize = sizeof(Type(ndarray.datatype))
-    shape = reverse(ndarray.shape)
-    shape[1] *= typesize
-    strides = reverse(ndarray.strides)
-    data = StridedView(data, Int.(Tuple(shape)), Int.(Tuple(strides)), Int(ndarray.offset))
+    # Add a new dimension for the bytes that make up the datatype
+    shape = (typesize, reverse(ndarray.shape)...)
+    strides = (1, reverse(ndarray.strides)...)
+    data = StridedView(data, Int.(shape), Int.(strides), Int(ndarray.offset))
     # Impose datatype
     data = reinterpret(Type(ndarray.datatype), data)
+    # Remove the new dimension again
+    data = reshape(data, shape[2:end])
     # Correct byteorder if necessary.
     # Do this after imposing the datatype since byteorder depends on the datatype.
     if ndarray.byteorder != host_byteorder
