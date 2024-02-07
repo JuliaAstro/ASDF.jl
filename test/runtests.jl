@@ -2,7 +2,6 @@ using ASDF2
 using Test
 using YAML
 
-@show pwd()
 asdf = ASDF2.load_file("blue_upchan_gain.00000000.asdf")
 println(YAML.write(asdf.metadata))
 

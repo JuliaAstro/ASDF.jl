@@ -125,6 +125,7 @@ function read_block(header::BlockHeader)
     elseif header.compression == Vector{UInt8}("blsc")
         data = Blosc.decompress(UInt8, data)::AbstractVector{UInt8}
         # elseif header.compression == Vector{UInt8}("bls2")
+        #     data = Blosc.decompress(UInt8, data)::AbstractVector{UInt8}
     elseif header.compression == Vector{UInt8}("bzp2")
         # TODO: Read directly from file
         data = transcode(Bzip2Decompressor, data)::AbstractVector{UInt8}
@@ -263,7 +264,7 @@ struct NDArray
         @assert (source === nothing) + (data === nothing) == 1
         @assert source === nothing || source >= 0
         @assert data === nothing || eltype(data) == Type(datatype)
-        @assert data === nothing || size(data) == shape
+        @assert data === nothing || size(data) == Tuple(reverse(shape))
         @assert offset >= 0
         @assert length(shape) == length(strides)
         @assert all(shape .>= 0)
@@ -274,64 +275,91 @@ end
 
 function NDArray(
     lazy_block_headers::LazyBlockHeaders,
-    source::Integer,
+    source::Union{Nothing,Integer},
+    data::Union{Nothing,AbstractArray},
     shape::AbstractVector{<:Integer},
     datatype::Union{Datatype,AbstractString},
-    byteorder::Union{Byteorder,AbstractString},
-    offset::Integer=0,
+    byteorder::Union{Nothing,Byteorder,AbstractString},
+    offset::Union{Nothing,Integer}=0,
     strides::Union{Nothing,<:AbstractVector{<:Integer}}=nothing,
 )
+    if source isa Integer
+        source = Int64(source)
+    end
     if datatype isa AbstractString
         datatype = Datatype(datatype)
     end
-    if byteorder isa AbstractString
+    if data !== nothing
+        # Convert arrays of arrays into multi-dimensional arrays
+        while eltype(data) <: AbstractVector
+            data = reduce(vcat, data)
+        end
+        data = reshape(data, Tuple(reverse(shape)))
+        # Correct element type
+        data = Array{Type(datatype)}(data)
+    end
+    if byteorder isa Nothing
+        byteorder = host_byteorder
+    elseif byteorder isa AbstractString
         byteorder = Byteorder(byteorder)
+    end
+    if offset isa Nothing
+        offset = 0
     end
     if strides isa Nothing
         strides = Int64[1 for sh in shape]
     end
     return NDArray(
-        lazy_block_headers, Int64(source), nothing, Vector{Int64}(shape), datatype, byteorder, Int64(offset), Vector{Int64}(strides)
+        lazy_block_headers, source, data, Vector{Int64}(shape), datatype, byteorder, Int64(offset), Vector{Int64}(strides)
     )
 end
 
 function make_construct_yaml_ndarray(block_headers::LazyBlockHeaders)
     function construct_yaml_ndarray(constructor::YAML.Constructor, node::YAML.Node)
         mapping = YAML.construct_mapping(constructor, node)
-        source = mapping["source"]::Integer
+        source = get(mapping, "source", nothing)::Union{Nothing,Integer}
+        data = get(mapping, "data", nothing)::Union{Nothing,AbstractVector}
         shape = mapping["shape"]::AbstractVector{<:Integer}
         datatype = mapping["datatype"]::AbstractString
-        byteorder = mapping["byteorder"]::AbstractString
-        offset = mapping["offset"]::Integer
-        strides = mapping["strides"]::AbstractVector{<:Integer}
-        return NDArray(block_headers, source, shape, datatype, byteorder, offset, strides)
+        byteorder = get(mapping, "byteorder", nothing)::Union{Nothing,AbstractString}
+        offset = get(mapping, "offset", nothing)::Union{Nothing,Integer}
+        strides = get(mapping, "strides", nothing)::Union{Nothing,AbstractVector{<:Integer}}
+        return NDArray(block_headers, source, data, shape, datatype, byteorder, offset, strides)
     end
     return construct_yaml_ndarray
 end
 
 function Base.getindex(ndarray::NDArray)
-    @assert ndarray.source !== nothing
-    data = read_block(ndarray.lazy_block_headers.block_headers[ndarray.source + 1])
-    # Handle strides and offset.
-    # Do this before imposing the datatype because strides are given in bytes.
-    typesize = sizeof(Type(ndarray.datatype))
-    # Add a new dimension for the bytes that make up the datatype
-    shape = (typesize, reverse(ndarray.shape)...)
-    strides = (1, reverse(ndarray.strides)...)
-    data = StridedView(data, Int.(shape), Int.(strides), Int(ndarray.offset))
-    # Impose datatype
-    data = reinterpret(Type(ndarray.datatype), data)
-    # Remove the new dimension again
-    data = reshape(data, shape[2:end])
-    # Correct byteorder if necessary.
-    # Do this after imposing the datatype since byteorder depends on the datatype.
-    if ndarray.byteorder != host_byteorder
-        map!(bswap, data, data)
+    if ndarray.data !== nothing
+        data = ndarray.data
+        @assert ndarray.byteorder == host_byteorder
+    elseif ndarray.source !== nothing
+        data = read_block(ndarray.lazy_block_headers.block_headers[ndarray.source + 1])
+        # Handle strides and offset.
+        # Do this before imposing the datatype because strides are given in bytes.
+        typesize = sizeof(Type(ndarray.datatype))
+        # Add a new dimension for the bytes that make up the datatype
+        shape = (typesize, reverse(ndarray.shape)...)
+        strides = (1, reverse(ndarray.strides)...)
+        data = StridedView(data, Int.(shape), Int.(strides), Int(ndarray.offset))
+        # Impose datatype
+        data = reinterpret(Type(ndarray.datatype), data)
+        # Remove the new dimension again
+        data = reshape(data, shape[2:end])
+        # Correct byteorder if necessary.
+        # Do this after imposing the datatype since byteorder depends on the datatype.
+        if ndarray.byteorder != host_byteorder
+            map!(bswap, data, data)
+        end
+    else
+        @assert false
     end
+
     # Check array layout
     @assert size(data) == Tuple(reverse(ndarray.shape))
     @assert eltype(data) == Type(ndarray.datatype)
     # TODO: Check strides (but how?)
+
     return data
 end
 

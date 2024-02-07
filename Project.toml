@@ -1,7 +1,7 @@
 name = "ASDF2"
 uuid = "da470b1c-b0a8-4533-b4d1-e613846a4bd7"
 authors = ["Erik Schnetter <schnetter@gmail.com>"]
-version = "0.1.0"
+version = "0.1.1"
 
 [deps]
 Blosc = "a74b3585-a348-5f62-a45c-50e91977d574"
