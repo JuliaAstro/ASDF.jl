@@ -1,8 +1,10 @@
 module ASDF2
 
+using BlockArrays
 using Blosc
 # using Blosc2
 using CodecBzip2
+using CodecLz4
 using CodecZlib
 using MD5
 using StridedViews
@@ -124,11 +126,15 @@ function read_block(header::BlockHeader)
         # do nothing, the block is uncompressed
     elseif header.compression == Vector{UInt8}("blsc")
         data = Blosc.decompress(UInt8, data)::AbstractVector{UInt8}
-        # elseif header.compression == Vector{UInt8}("bls2")
+    elseif header.compression == Vector{UInt8}("bls2")
+        @assert false
         #     data = Blosc.decompress(UInt8, data)::AbstractVector{UInt8}
     elseif header.compression == Vector{UInt8}("bzp2")
         # TODO: Read directly from file
         data = transcode(Bzip2Decompressor, data)::AbstractVector{UInt8}
+    elseif header.compression == Vector{UInt8}("lz4\0")
+        # TODO: Read directly from file
+        data = transcode(Lz4Decompressor, data)::AbstractVector{UInt8}
     elseif header.compression == Vector{UInt8}("zlib")
         # TODO: Read directly from file
         data = transcode(ZlibDecompressor, data)::AbstractVector{UInt8}
@@ -360,7 +366,84 @@ function Base.getindex(ndarray::NDArray)
     @assert eltype(data) == Type(ndarray.datatype)
     # TODO: Check strides (but how?)
 
-    return data
+    return data::AbstractArray
+end
+
+################################################################################
+
+struct NDArrayChunk
+    start::Vector{Int64}
+    ndarray::NDArray
+
+    function NDArrayChunk(start::Vector{Int64}, ndarray::NDArray)
+        @assert length(start) == length(ndarray.strides)
+        @assert all(start .>= 0)
+        return new(start, ndarray)
+    end
+end
+
+function NDArrayChunk(start::AbstractVector{<:Integer}, ndarray::NDArray)
+    return NDArrayChunk(Vector{Int64}(start), ndarray)
+end
+
+function make_construct_yaml_ndarray_chunk(block_headers::LazyBlockHeaders)
+    function construct_yaml_ndarray_chunk(constructor::YAML.Constructor, node::YAML.Node)
+        mapping = YAML.construct_mapping(constructor, node)
+        start = mapping["start"]::AbstractVector{<:Integer}
+        ndarray = mapping["ndarray"]::NDArray
+        return NDArrayChunk(start, ndarray)
+    end
+    return construct_yaml_ndarray_chunk
+end
+
+struct ChunkedNDArray
+    shape::Vector{Int64}
+    datatype::Datatype
+    chunks::AbstractVector{NDArrayChunk}
+
+    function ChunkedNDArray(shape::Vector{Int64}, datatype::Datatype, chunks::Vector{NDArrayChunk})
+        @assert all(shape .>= 0)
+        for chunk in chunks
+            @assert length(chunk.start) == length(shape)
+            # We allow overlaps and gaps in the chunks
+            @assert all(chunk.start .<= shape)
+            @assert all(chunk.start + chunk.ndarray.shape .<= shape)
+            @assert chunk.ndarray.datatype == datatype
+        end
+        return new(shape, datatype, chunks)
+    end
+end
+
+function ChunkedNDArray(
+    shape::AbstractVector{<:Integer}, datatype::Union{Datatype,AbstractString}, chunks::AbstractVector{NDArrayChunk}
+)
+    if datatype isa AbstractString
+        datatype = Datatype(datatype)
+    end
+    return ChunkedNDArray(Vector{Int64}(shape), datatype, chunks)
+end
+
+function make_construct_yaml_chunked_ndarray(block_headers::LazyBlockHeaders)
+    function construct_yaml_chunked_ndarray(constructor::YAML.Constructor, node::YAML.Node)
+        mapping = YAML.construct_mapping(constructor, node)
+        shape = mapping["shape"]::AbstractVector{<:Integer}
+        datatype = mapping["datatype"]::AbstractString
+        chunks = mapping["chunks"]::AbstractVector{NDArrayChunk}
+        return ChunkedNDArray(shape, datatype, chunks)
+    end
+    return construct_yaml_chunked_ndarray
+end
+
+function Base.getindex(chunked_ndarray::ChunkedNDArray)
+    shape = chunked_ndarray.shape
+    datatype = Type(chunked_ndarray.datatype)
+    data = Array{datatype}(undef, reverse(shape)...)
+    for chunk in chunked_ndarray.chunks
+        start = CartesianIndex(reverse(chunk.start .+ 1)...)
+        shape = CartesianIndex(reverse(chunk.start + chunk.ndarray.shape)...)
+        data[start:shape] .= chunk.ndarray[]
+    end
+    return data::AbstractArray
 end
 
 ################################################################################
@@ -380,15 +463,18 @@ end
 asdf_constructors = copy(YAML.default_yaml_constructors)
 asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = asdf_constructors["tag:yaml.org,2002:map"]
 asdf_constructors["tag:stsci.edu:asdf/core/software-1.0.0"] = asdf_constructors["tag:yaml.org,2002:map"]
-# asdf_constructors["tag:stsci.edu:asdf/core/ndarray-1.0.0"] = construct_yaml_ndarray
 
 function load_file(filename::AbstractString)
     io = open(filename, "r")
     lazy_block_headers = LazyBlockHeaders()
     construct_yaml_ndarray = make_construct_yaml_ndarray(lazy_block_headers)
+    construct_yaml_chunked_ndarray = make_construct_yaml_chunked_ndarray(lazy_block_headers)
+    construct_yaml_ndarray_chunk = make_construct_yaml_ndarray_chunk(lazy_block_headers)
 
     asdf_constructors′ = copy(asdf_constructors)
     asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-1.0.0"] = construct_yaml_ndarray
+    asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-chunk-1.0.0"] = construct_yaml_ndarray_chunk
+    asdf_constructors′["tag:stsci.edu:asdf/core/chunked-ndarray-1.0.0"] = construct_yaml_chunked_ndarray
 
     metadata = YAML.load(io, asdf_constructors′)
     # lazy_block_headers.block_headers = find_all_blocks(io, position(io))

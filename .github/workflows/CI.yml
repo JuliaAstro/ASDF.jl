@@ -39,26 +39,17 @@ jobs:
             version: "nightly"
     steps:
       - uses: actions/checkout@v4
-      - uses: julia-actions/setup-julia@v1
+      - uses: julia-actions/setup-julia@v2
         with:
           version: ${{matrix.version}}
           arch: ${{matrix.arch}}
-      - uses: actions/cache@v3
-        env:
-          cache-name: cache-artifacts
-        with:
-          path: ~/.julia/artifacts
-          key: ${{runner.os}}-test-${{env.cache-name}}-${{hashFiles('**/Project.toml')}}
-          restore-keys: |
-            ${{runner.os}}-test-${{env.cache-name}}-
-            ${{runner.os}}-test-
-            ${{runner.os}}-
+      - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-buildpkg@v1
         env:
           PYTHON:
       - uses: julia-actions/julia-runtest@v1
         continue-on-error: ${{matrix.version == 'nightly'}}
       - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v3
+      - uses: codecov/codecov-action@v4
         with:
           file: lcov.info
