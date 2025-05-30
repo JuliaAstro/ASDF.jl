@@ -28,18 +28,6 @@ jobs:
           - arch: "x64"
             os: "ubuntu-24.04"
             version: "1.10"
-          - arch: "x64"
-            os: "ubuntu-24.04"
-            version: "1.9"
-          - arch: "x64"
-            os: "ubuntu-24.04"
-            version: "1.8"
-          - arch: "x64"
-            os: "ubuntu-24.04"
-            version: "1.7"
-          - arch: "x64"
-            os: "ubuntu-24.04"
-            version: "1.6"
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
