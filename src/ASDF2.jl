@@ -1,14 +1,41 @@
 module ASDF2
 
 using BlockArrays
-using Blosc
-# using Blosc2
-using CodecBzip2
-using CodecLz4
-using CodecZlib
+using CodecXz
+using ChunkCodecLibBlosc
+using ChunkCodecLibBzip2
+using ChunkCodecLibLz4
+using ChunkCodecLibZlib
+using ChunkCodecLibZstd
 using MD5
 using StridedViews
 using YAML
+
+################################################################################
+
+const software_name = "ASDF2.jl"
+const software_author = "Erik Schnetter <schnetter@gmail.com>"
+const software_homepage = "https://github.com/eschnett/ASDF2.jl"
+const software_version = "0.1.3" # can we get this automatically?
+
+################################################################################
+
+@enum Compression C_None C_Blosc C_Blosc2 C_Bzip2 C_Lz4 C_Xz C_Zlib C_Zstd
+
+const compression_keys = Dict{Compression,Vector{UInt8}}(
+    C_None => UInt8[0, 0, 0, 0],
+    C_Blosc => Vector{UInt8}("blsc"),
+    C_Blosc2 => Vector{UInt8}("bls2"),
+    C_Bzip2 => Vector{UInt8}("bzp2"),
+    C_Lz4 => Vector{UInt8}("lz4\0"),
+    C_Xz => Vector{UInt8}("xz\0\0"),
+    C_Zlib => Vector{UInt8}("zlib"),
+    C_Zstd => Vector{UInt8}("zstd"),
+)
+@assert all(length(val)==4 for val in values(compression_keys))
+const compression_enums = Dict{Vector{UInt8},Compression}(
+    value => key for (key, value) in compression_keys
+)
 
 ################################################################################
 
@@ -35,7 +62,7 @@ const block_magic_token = UInt8[0xd3, 0x42, 0x4c, 0x4b] # "\323BLK"
 
 find_first_block(io::IO) = find_next_block(io, Int64(0))
 function find_next_block(io::IO, pos::Int64)
-    sz = 1000 * 1000
+    sz = 10 * 1000 * 1000
     buffer = Array{UInt8}(undef, sz)
 
     block_range = nothing
@@ -61,6 +88,26 @@ big2native_U8(bytes::AbstractVector{UInt8}) = bytes[1]
 big2native_U16(bytes::AbstractVector{UInt8}) = (UInt16(bytes[1]) << 8) | bytes[2]
 big2native_U32(bytes::AbstractVector{UInt8}) = (UInt32(big2native_U16(@view bytes[1:2])) << 16) | big2native_U16(@view bytes[3:4])
 big2native_U64(bytes::AbstractVector{UInt8}) = (UInt64(big2native_U32(@view bytes[1:4])) << 32) | big2native_U32(@view bytes[5:8])
+
+native2big_U8(val::UInt8) = UInt8[val]
+native2big_U16(val::UInt16) = UInt8[(val >>> 0x08) & 0xff, (val >>> 0x00) & 0xff]
+native2big_U32(val::UInt32) = UInt8[(val >>> 0x18) & 0xff, (val >>> 0x10) & 0xff, (val >>> 0x08) & 0xff, (val >>> 0x00) & 0xff]
+function native2big_U64(val::UInt64)
+    UInt8[
+        (val >>> 0x38) & 0xff,
+        (val >>> 0x30) & 0xff,
+        (val >>> 0x28) & 0xff,
+        (val >>> 0x20) & 0xff,
+        (val >>> 0x18) & 0xff,
+        (val >>> 0x10) & 0xff,
+        (val >>> 0x08) & 0xff,
+        (val >>> 0x00) & 0xff,
+    ]
+end
+native2big_U8(val::Integer) = native2big_U8(UInt8(val))
+native2big_U16(val::Integer) = native2big_U16(UInt16(val))
+native2big_U32(val::Integer) = native2big_U32(UInt32(val))
+native2big_U64(val::Integer) = native2big_U64(UInt64(val))
 
 function read_block_header(io::IO, position::Int64)
     # Read block header
@@ -122,26 +169,30 @@ function read_block(header::BlockHeader)
     end
 
     # Decompress data
-    if all(header.compression .== 0)
+    # TODO: Read directly from file
+    compression = compression_enums[header.compression]
+    if compression == C_None
         # do nothing, the block is uncompressed
-    elseif header.compression == Vector{UInt8}("blsc")
-        data = Blosc.decompress(UInt8, data)::AbstractVector{UInt8}
-    elseif header.compression == Vector{UInt8}("bls2")
-        @assert false
-        #     data = Blosc.decompress(UInt8, data)::AbstractVector{UInt8}
-    elseif header.compression == Vector{UInt8}("bzp2")
-        # TODO: Read directly from file
-        data = transcode(Bzip2Decompressor, data)::AbstractVector{UInt8}
-    elseif header.compression == Vector{UInt8}("lz4\0")
-        # TODO: Read directly from file
-        data = transcode(Lz4Decompressor, data)::AbstractVector{UInt8}
-    elseif header.compression == Vector{UInt8}("zlib")
-        # TODO: Read directly from file
-        data = transcode(ZlibDecompressor, data)::AbstractVector{UInt8}
+    elseif compression == C_Xz
+        data = transcode(XzDecompressor, data)
     else
-        # TODO: Better error message
-        @assert false
+        if compression == C_Blosc
+            codec = BloscCodec()
+        elseif compression == C_Bzip2
+            codec = BZ2Codec()
+        elseif compression == C_Lz4
+            codec = LZ4FrameCodec()
+        elseif compression == C_Zlib
+            codec = ZlibCodec()
+        elseif compression == C_Zstd
+            codec = ZstdCodec()
+        else
+            # TODO: Better error message
+            @assert false
+        end
+        data = decode(codec, data)
     end
+    data::AbstractVector{UInt8}
 
     # TODO: Better error message
     @assert length(data) == header.data_size
@@ -254,7 +305,7 @@ struct NDArray
     datatype::Datatype
     byteorder::Byteorder
     offset::Int64
-    strides::Vector{Int64}
+    strides::Vector{Int64} # stored in ASDF (Python/C) order, not in Julia (Fortran) order
     # mask
 
     function NDArray(
@@ -297,9 +348,7 @@ function NDArray(
     end
     if data !== nothing
         # Convert arrays of arrays into multi-dimensional arrays
-        while eltype(data) <: AbstractVector
-            data = reduce(vcat, data)
-        end
+        data = stack(data)
         data = reshape(data, Tuple(reverse(shape)))
         # Correct element type
         data = Array{Type(datatype)}(data)
@@ -313,7 +362,9 @@ function NDArray(
         offset = 0
     end
     if strides isa Nothing
-        strides = Int64[1 for sh in shape]
+        # Calculate byte strides in C order
+        sz = sizeof(Type(datatype))
+        strides = reverse(cumprod([sz; reverse(shape[(begin + 1):end])]))
     end
     return NDArray(
         lazy_block_headers, source, data, Vector{Int64}(shape), datatype, byteorder, Int64(offset), Vector{Int64}(strides)
@@ -364,7 +415,7 @@ function Base.getindex(ndarray::NDArray)
     # Check array layout
     @assert size(data) == Tuple(reverse(ndarray.shape))
     @assert eltype(data) == Type(ndarray.datatype)
-    # TODO: Check strides (but how?)
+    @assert sizeof(eltype(data)) .* Base.strides(data) == Tuple(reverse(ndarray.strides))
 
     return data::AbstractArray
 end
@@ -480,6 +531,222 @@ function load_file(filename::AbstractString)
     # lazy_block_headers.block_headers = find_all_blocks(io, position(io))
     lazy_block_headers.block_headers = find_all_blocks(io)
     return ASDFFile(filename, metadata, lazy_block_headers)
+end
+
+################################################################################
+################################################################################
+################################################################################
+
+struct ASDFLibrary
+    name::AbstractString
+    author::AbstractString
+    homepage::AbstractString
+    version::AbstractString
+end
+function YAML._print(io::IO, val::ASDFLibrary, level::Int=0, ignore_level::Bool=false)
+    println(io, "!core/software-1.0.0")
+    library = Dict(:name => val.name, :author => val.author, :homepage => val.homepage, :version => val.version)
+    YAML._print(io, library, level, ignore_level)
+end
+
+struct NDArrayWrapper
+    array::AbstractArray
+    compression::Compression
+    inline::Bool
+end
+function NDArrayWrapper(array::AbstractArray; compression::Compression=C_Bzip2, inline::Bool=false)
+    return NDArrayWrapper(array, compression, inline)
+end
+Base.getindex(val::NDArrayWrapper) = val.array
+
+struct Blocks
+    arrays::Vector{NDArrayWrapper}
+    positions::Vector{Int64}
+    Blocks() = new(NDArrayWrapper[], Int64[])
+end
+function Base.empty!(blocks::Blocks)
+    empty!(blocks.arrays)
+    empty!(blocks.positions)
+    nothing
+end
+Base.isempty(blocks::Blocks) = isempty(blocks.arrays) && isempty(blocks.positions)
+# Unfortunately we need a global variable.
+# This means that `write_file` is not thread-safe.
+const blocks::Blocks = Blocks()
+
+function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bool=false)
+    if val.inline
+        data = val.array
+        # Split multidimensional arrays into array-of-arrays
+        data = eachslice(data; dims=Tuple(2:ndims(data)))
+        ndarray = Dict(
+            :data => data,
+            :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
+            :datatype => string(Datatype(eltype(val.array))),
+            # :offset => 0::Integer,
+            # :strides => ::Vector{Int64},
+        )
+    else
+        global blocks
+        source = length(blocks.arrays)
+        push!(blocks.arrays, val)
+        ndarray = Dict(
+            :source => source::Integer,
+            :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
+            :datatype => string(Datatype(eltype(val.array))),
+            :byteorder => string(host_byteorder::Byteorder),
+            # :offset => 0::Integer,
+            # :strides => ::Vector{Int64},
+        )
+    end
+    # println(io, YAML._indent("-\n", level), "!core/chunked-ndarray-1.0.0")
+    println(io, "!core/ndarray-1.0.0")
+    YAML._print(io, ndarray, level, ignore_level)
+end
+
+function write_file(filename::AbstractString, document::Dict{Any,Any})
+    # Set up block descriptors
+    global blocks
+    empty!(blocks)
+
+    # Ensure standard tags are present
+    # TODO:
+    # - provide a function that generates a standard empty document
+    # - don't modify the input
+    # - remove the `{Any,Any}` in the test cases
+    # - maybe make the document not a `Dict` but the stuff with the `metadata` that the writer returns?
+    get!(document, "asdf/library") do
+        ASDFLibrary(software_name, software_author, software_homepage, software_version)
+    end
+
+    # Write YAML part of file
+    io = open(filename, "w")
+    println(
+        io,
+        """#ASDF 1.0.0
+           #ASDF_STANDARD 1.2.0
+           # This is an ASDF file <https://asdf-standard.readthedocs.io/>
+           %YAML 1.1
+           %TAG ! tag:stsci.edu:asdf/
+           ---
+           !core/asdf-1.1.0""",
+    )
+    YAML.write(io, document)
+    println(io, "...")
+
+    # Write blocks
+    for array in blocks.arrays
+        source = length(blocks.positions)
+        pos = position(io)
+        push!(blocks.positions, pos)
+
+        # TODO: create function write_block_header
+        max_header_size = 6 + 48
+        header = Array{UInt8}(undef, max_header_size)
+        # # Skip the header.; the real header will be
+        # # written later once its contents are known
+        # skip(io, length(header))
+
+        token = block_magic_token
+        header_size = 48
+        flags = 0               # not streamed
+        compression = compression_keys[array.compression]
+        data_size = sizeof(array.array)
+
+        # Write block
+        # TODO: create function write_block
+
+        input = array.array
+        # Make dense (contiguous) if necessary
+        input = input isa DenseArray ? input : Array(input)
+        # Reshape to 1D
+        input = reshape(input, :)
+        # Reinterpret as UInt8
+        input = reinterpret(UInt8, input)
+
+        # TODO: Write directly to file
+        if array.compression == C_None
+            data = input
+        elseif array.compression == C_Xz
+            # Copy
+            # TODO: Don't copy input
+            input = input isa Vector ? input : Vector(input)
+            data = transcode(XzCompressor, input)
+        else
+            if array.compression == C_Blosc
+                encode_options = BloscEncodeOptions(; clevel=9, doshuffle=2, typesize=sizeof(eltype(array.array)), compressor="zstd")
+            elseif array.compression == C_Bzip2
+                encode_options = BZ2EncodeOptions(; blockSize100k=9)
+            elseif array.compression == C_Lz4
+                encode_options = LZ4FrameEncodeOptions(; compressionLevel=12, blockSizeID=7)
+            elseif array.compression == C_Zlib
+                encode_options = ZlibEncodeOptions(; level=9)
+            elseif array.compression == C_Zstd
+                encode_options = ZstdEncodeOptions(; compressionLevel=22)
+            else
+                @assert false
+            end
+            data = encode(encode_options, input)
+        end
+
+        # Don't compress unless it reduces the size
+        if length(data) >= length(input)
+            compression = compression_keys[C_None]
+            data = input
+        end
+
+        # We need the standard, dense layout
+        data::AbstractVector{UInt8}
+        data::Union{DenseArray,Base.ReinterpretArray{<:Any,<:Any,<:Any,<:DenseArray}}
+
+        used_size = length(data)
+        allocated_size = used_size
+        checksum = Vector{UInt8}(md5(data))
+
+        # Fill header
+        header[1:4] .= token
+        header[5:6] .= native2big_U16(header_size)
+        header[7:10] .= native2big_U32(flags)
+        header[11:14] .= compression
+        header[15:22] .= native2big_U64(allocated_size)
+        header[23:30] .= native2big_U64(used_size)
+        header[31:38] .= native2big_U64(data_size)
+        header[39:54] .= checksum
+
+        # Write header
+        # endpos = position(io)
+        # seek(io, pos)
+        write(io, header)
+        # seek(io, endpos)
+
+        # Write data
+        write(io, data)
+
+        # Check consistency
+        endpos = position(io)
+        @assert endpos == pos + 6 + header_size + allocated_size
+    end
+    @assert length(blocks.positions) == length(blocks.arrays)
+
+    # Write block list
+    println(io, "#ASDF BLOCK INDEX")
+    println(io, "%YAML 1.1")
+    println(io, "---")
+    print(io, "[")
+    for pos in blocks.positions
+        print(io, pos, ",")
+    end
+    println(io, "]")
+    println(io, "...")
+
+    # Close file
+    close(io)
+
+    # Clean up
+    empty!(blocks)
+
+    # Done.
+    return nothing
 end
 
 end
