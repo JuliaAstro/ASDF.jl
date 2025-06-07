@@ -8,15 +8,16 @@ using ChunkCodecLibLz4
 using ChunkCodecLibZlib
 using ChunkCodecLibZstd
 using MD5
+using PkgVersion
 using StridedViews
 using YAML
 
 ################################################################################
 
 const software_name = "ASDF2.jl"
-const software_author = "Erik Schnetter <schnetter@gmail.com>"
+const software_author = PkgVersion.@Author "Erik Schnetter <schnetter@gmail.com>"
 const software_homepage = "https://github.com/eschnett/ASDF2.jl"
-const software_version = "0.1.3" # can we get this automatically?
+const software_version = string(PkgVersion.@Version)
 
 ################################################################################
 
