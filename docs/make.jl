@@ -9,7 +9,8 @@ using Documenter.Remotes: GitHub
 
 makedocs(;
     modules = [ASDF2],
-    repo = GitHub("JuliaAstro/Photometry.jl"),
+    authors = "Erik Schnetter",
+    repo = GitHub("JuliaAstro/ASDF2.jl"),
     sitename = "ASDF2.jl",
     format = Documenter.HTML(
         prettyurls = true,
@@ -18,7 +19,7 @@ makedocs(;
 )
 
 deploydocs(;
-    repo = "github.com/JuliaAstro/ASDF2.jl.git",
+    repo = "github.com/JuliaAstro/ASDF2.jl",
     push_preview = true,
     versions = ["stable" => "v^", "v#.#"], # Restrict to minor releases
 )
