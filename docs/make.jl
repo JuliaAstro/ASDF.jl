@@ -3,9 +3,22 @@
 
 push!(LOAD_PATH, "..")
 
-using Documenter
 using ASDF2
+using Documenter
+using Documenter.Remotes: GitHub
 
-makedocs(; sitename="ASDF2", format=Documenter.HTML(), modules=[ASDF2])
+makedocs(;
+    modules = [ASDF2],
+    repo = GitHub("JuliaAstro/Photometry.jl"),
+    sitename = "ASDF2.jl",
+    format = Documenter.HTML(
+        prettyurls = true,
+        canonical = "https://juliaastro.org/ASDF2/stable/",
+    ),
+)
 
-deploydocs(; repo="github.com/eschnett/ASDF2.jl.git", devbranch="main", push_preview=true)
+deploydocs(;
+    repo = "github.com/JuliaAstro/ASDF2.jl.git",
+    push_preview = true,
+    versions = ["stable" => "v^", "v#.#"], # Restrict to minor releases
+)

@@ -16,7 +16,7 @@ using YAML
 
 const software_name = "ASDF2.jl"
 const software_author = PkgVersion.@Author "Erik Schnetter <schnetter@gmail.com>"
-const software_homepage = "https://github.com/eschnett/ASDF2.jl"
+const software_homepage = "https://github.com/JuliaAstro/ASDF2.jl"
 const software_version = string(PkgVersion.@Version)
 
 ################################################################################
