@@ -11,16 +11,17 @@ jobs:
   build:
     permissions:
       contents: write
-    runs-on: ubuntu-24.04
+      pull-requests: read
+      statuses: write
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v5
-    - uses: julia-actions/setup-julia@v2
-      with:
-        version: '1.10'
-    - name: Install dependencies
-      run: julia --project=docs/ -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
-    - name: Build and deploy
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # If authenticating with GitHub Actions token
-        DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }} # If authenticating with SSH deploy key
-      run: julia --project=docs/ docs/make.jl
+      - uses: actions/checkout@v5
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.10'
+      - uses: julia-actions/cache@v2
+      - name: Build and deploy
+        uses: julia-actions/julia-docdeploy@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # If authenticating with GitHub Actions token
+          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }} # If authenticating with SSH deploy key
