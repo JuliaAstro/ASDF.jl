@@ -1,5 +1,5 @@
-# ASDF2.jl
+# ASDF.jl
 
 ```@autodocs
-Modules = [ASDF2]
+Modules = [ASDF]
 ```

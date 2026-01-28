@@ -1,4 +1,4 @@
-module ASDF2
+module ASDF
 
 using BlockArrays
 using CodecXz
@@ -14,9 +14,9 @@ using YAML
 
 ################################################################################
 
-const software_name = "ASDF2.jl"
+const software_name = "ASDF.jl"
 const software_author = PkgVersion.@Author "Erik Schnetter <schnetter@gmail.com>"
-const software_homepage = "https://github.com/JuliaAstro/ASDF2.jl"
+const software_homepage = "https://github.com/JuliaAstro/ASDF.jl"
 const software_version = string(PkgVersion.@Version)
 
 ################################################################################
@@ -204,14 +204,14 @@ end
 ################################################################################
 
 """
-    @enum ASDF2.Byteorder Byteorder_little Byteorder_big
+    @enum ASDF.Byteorder Byteorder_little Byteorder_big
 """
 @enum Byteorder Byteorder_little Byteorder_big
 const byteorder_string_dict = Dict{Byteorder,String}(Byteorder_little => "little", Byteorder_big => "big")
 const string_byteorder_dict = Dict{String,Byteorder}(val => key for (key, val) in byteorder_string_dict)
 
 """
-    ASDF2.Byteorder(str::AbstractString)::Byteorder
+    ASDF.Byteorder(str::AbstractString)::Byteorder
 """
 Byteorder(str::AbstractString) = string_byteorder_dict[str]
 

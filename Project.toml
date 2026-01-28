@@ -1,7 +1,7 @@
-name = "ASDF2"
-uuid = "da470b1c-b0a8-4533-b4d1-e613846a4bd7"
+name = "ASDF"
+uuid = "686f71d1-807d-59a4-a860-28280ea06d7b"
 authors = ["Erik Schnetter <schnetter@gmail.com>"]
-version = "0.2.0"
+version = "2.0.0"
 
 [deps]
 BlockArrays = "8e7c35d0-a365-5155-bbbb-fb81a777f24e"

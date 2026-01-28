@@ -1,4 +1,4 @@
-using ASDF2
+using ASDF
 using Test
 using YAML
 
@@ -7,7 +7,7 @@ map_tree(f, vec::AbstractVector) = [map_tree(f, elem) for elem in vec]
 map_tree(f, dict::AbstractDict) = Dict(key => map_tree(f, val) for (key, val) in dict)
 
 output(x) = nothing
-function output(arr::ASDF2.NDArray)
+function output(arr::ASDF.NDArray)
     println("source: $(arr.source)")
     data = arr[]
     println("    type: $(typeof(data))")
@@ -17,7 +17,7 @@ end
 ################################################################################
 
 @testset "Read ASDF file" begin
-    asdf = ASDF2.load_file("blue_upchan_gain.00000000.asdf")
+    asdf = ASDF.load_file("blue_upchan_gain.00000000.asdf")
     println(YAML.write(asdf.metadata))
 
     map_tree(output, asdf.metadata)
@@ -40,7 +40,7 @@ end
 ################################################################################
 
 @testset "Read ASDF file with chunked arrays" begin
-    asdf = ASDF2.load_file("chunking.asdf")
+    asdf = ASDF.load_file("chunking.asdf")
     println(YAML.write(asdf.metadata))
 
     map_tree(output, asdf.metadata)
@@ -64,21 +64,21 @@ end
 
     array = Float64[1/(i+j+k-2) for i in 1:50, j in 1:51, k in 1:52]
     doc = Dict{Any,Any}(
-        "data1" => ASDF2.NDArrayWrapper([1 2; 3 4]; inline=false),
-        "data2" => ASDF2.NDArrayWrapper([1 2; 3 4]; inline=true),
+        "data1" => ASDF.NDArrayWrapper([1 2; 3 4]; inline=false),
+        "data2" => ASDF.NDArrayWrapper([1 2; 3 4]; inline=true),
         "group" => Dict{Any,Any}(
-            "element1" => ASDF2.NDArrayWrapper(array; compression=ASDF2.C_None),
-            "element2" => ASDF2.NDArrayWrapper(array; compression=ASDF2.C_Blosc),
-            "element3" => ASDF2.NDArrayWrapper(array; compression=ASDF2.C_Bzip2),
-            "element4" => ASDF2.NDArrayWrapper(array; compression=ASDF2.C_Lz4),
-            "element5" => ASDF2.NDArrayWrapper(array; compression=ASDF2.C_Xz),
-            "element6" => ASDF2.NDArrayWrapper(array; compression=ASDF2.C_Zlib),
-            "element7" => ASDF2.NDArrayWrapper(array; compression=ASDF2.C_Zstd),
+            "element1" => ASDF.NDArrayWrapper(array; compression=ASDF.C_None),
+            "element2" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Blosc),
+            "element3" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Bzip2),
+            "element4" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Lz4),
+            "element5" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Xz),
+            "element6" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Zlib),
+            "element7" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Zstd),
         ),
     )
-    ASDF2.write_file(filename, doc)
+    ASDF.write_file(filename, doc)
 
-    doc′ = ASDF2.load_file(filename)
+    doc′ = ASDF.load_file(filename)
     map_tree(output, doc′.metadata)
 
     data1 = doc["data1"][]
