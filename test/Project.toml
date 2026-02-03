@@ -1,3 +1,6 @@
 [deps]
+ASDF = "686f71d1-807d-59a4-a860-28280ea06d7b"
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+ParallelTestRunner = "d3525ed8-44d0-4b2c-a655-542cee43accc"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
