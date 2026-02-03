@@ -1,6 +1,4 @@
-The MIT License (MIT) <https://opensource.org/licenses/MIT>
-
-Copyright (c) 2018 Erik Schnetter
+Copyright 2023 Erik Schnetter <schnetter@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining
 a copy of this software and associated documentation files (the

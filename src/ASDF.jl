@@ -1,492 +1,753 @@
 module ASDF
 
-using PyCall
-using URIParser
-
-const asdf = PyNULL()
-function __init__()
-    # copy!(asdf, pyimport_conda("asdf", "asdf", "conda-forge"))
-    # copy!(asdf, pyimport_conda("asdf", "asdf", "astropy"))
-    copy!(asdf, pyimport("asdf"))
-end
-
-
-
-################################################################################
-
-struct Empty end
-const empty = Empty()
-
-const Maybe{T} = Union{Nothing, T}
-nothing2tuple(x) = x
-nothing2tuple(::Nothing) = ()
-
-
+using BlockArrays
+using CodecXz
+using ChunkCodecLibBlosc
+using ChunkCodecLibBzip2
+using ChunkCodecLibLz4
+using ChunkCodecLibZlib
+using ChunkCodecLibZstd
+using MD5
+using PkgVersion
+using StridedViews
+using YAML
 
 ################################################################################
 
-const tag2asdftype = Dict{String, Type}()
-
-function makeASDFType(pyobj::PyObject)
-    tag = try
-        pyobj.yaml_tag
-    catch
-        # Convert to a nice Julia type if possible
-        return convert(PyAny, pyobj)
-    end
-    type_ = get(tag2asdftype, tag, empty)
-    if type_ === empty
-        @show tag
-        @assert false           # for debugging
-        return pyobj
-    end
-    type_(pyobj)::ASDFType
-end
-
-
+const software_name = "ASDF.jl"
+const software_author = PkgVersion.@Author "Erik Schnetter <schnetter@gmail.com>"
+const software_homepage = "https://github.com/JuliaAstro/ASDF.jl"
+const software_version = string(PkgVersion.@Version)
 
 ################################################################################
 
-struct File
-    pyobj::PyObject
-end
+@enum Compression C_None C_Blosc C_Blosc2 C_Bzip2 C_Lz4 C_Xz C_Zlib C_Zstd
 
-function File(dict::Dict)       # for convenience
-    File(asdf.AsdfFile(dict))
-end
-
-function open(filename::AbstractString)::File
-    File(asdf.open(filename))
-end
-
-function close(file::File)::Nothing
-    file.pyobj.close()
-end
-
-function write_to(file::File, filename::AbstractString)::Nothing
-    file.pyobj.write_to(filename)
-end
-
-
-
-function file_format_version(file::File)::VersionNumber
-    VersionNumber(file.pyobj.file_format_version)
-end
-
-function version(file::File)::VersionNumber
-    VersionNumber(file.pyobj.version)
-end
-
-function Base.VersionNumber(obj::PyObject)
-    VersionNumber(
-        obj.major, obj.minor, obj.patch, obj.prerelease, obj.build)
-end
-function Base.VersionNumber(obj::Dict)
-    VersionNumber(
-        obj["major"], obj["minor"], obj["patch"],
-        nothing2tuple(obj["prerelease"]), nothing2tuple(obj["build"]))
-end
-
-
-
-function comments(file::File)::Vector{String}
-    file.pyobj.comments
-end
-
-
-
-function tree(file::File)::Tree
-    makeASDFType(file.pyobj."tree"::PyObject)::Tree
-end
-
-
+const compression_keys = Dict{Compression,Vector{UInt8}}(
+    C_None => UInt8[0, 0, 0, 0],
+    C_Blosc => Vector{UInt8}("blsc"),
+    C_Blosc2 => Vector{UInt8}("bls2"),
+    C_Bzip2 => Vector{UInt8}("bzp2"),
+    C_Lz4 => Vector{UInt8}("lz4\0"),
+    C_Xz => Vector{UInt8}("xz\0\0"),
+    C_Zlib => Vector{UInt8}("zlib"),
+    C_Zstd => Vector{UInt8}("zstd"),
+)
+@assert all(length(val)==4 for val in values(compression_keys))
+const compression_enums = Dict{Vector{UInt8},Compression}(
+    value => key for (key, value) in compression_keys
+)
 
 ################################################################################
 
-# id: "http://stsci.edu/schemas/asdf/core/asdf-1.1.0"
-# tag: "tag:stsci.edu:asdf/core/asdf-1.1.0"
-# title: Top-level schema for every ASDF file.
-# additionalProperties: true
+struct BlockHeader
+    io::IO
+    position::Int64
 
-"""Top-level schema for every ASDF file"""
-struct Tree
-    pyobj::PyObject
-end
-tag2asdftype["tag:stsci.edu:asdf/core/asdf-1.0.0"] = Tree
-tag2asdftype["tag:stsci.edu:asdf/core/asdf-1.1.0"] = Tree
-additionalProperties(::Tree) = ()
-
-# This constructor must come after the type Tree has been defined
-# TODO: Reverse order of types in this file
-function File(tree::Tree)
-    File(asdf.AsdfFile(tree.pyobj))
+    token::AbstractVector{UInt8} # length 4
+    header_size::UInt16
+    flags::UInt32
+    compression::AbstractVector{UInt8} # length 4
+    allocated_size::UInt64
+    used_size::UInt64
+    data_size::UInt64
+    checksum::AbstractVector{UInt8} # length 16
 end
 
-function asdf_library(tree::Tree)::Maybe{Software}
-    software = get(tree.pyobj, PyObject, "asdf_library", empty)
-    if software === empty
-        return nothing
-    end
-    software::PyObject
-    makeASDFType(software)::Software
+mutable struct LazyBlockHeaders
+    block_headers::Vector{BlockHeader}
+    LazyBlockHeaders() = new(BlockHeader[])
 end
 
-# History is apparently not supported by the Python ASDF library
+const block_magic_token = UInt8[0xd3, 0x42, 0x4c, 0x4b] # "\323BLK"
 
+find_first_block(io::IO) = find_next_block(io, Int64(0))
+function find_next_block(io::IO, pos::Int64)
+    sz = 10 * 1000 * 1000
+    buffer = Array{UInt8}(undef, sz)
 
-
-################################################################################
-
-# id: "http://stsci.edu/schemas/asdf/core/software-1.0.0"
-# tag: "tag:stsci.edu:schemas/asdf/core/software-1.0.0"
-# title: Describes a software package.
-# required: [name, version]
-# additionalProperties: true
-
-"""Describes a software package"""
-struct Software
-    pyobj::PyObject
-end
-tag2asdftype["tag:stsci.edu:asdf/core/software-1.0.0"] = Software
-additionalProperties(::Software) = ()
-
-function name(software::Software)
-    software.pyobj.get("name")::String
-end
-
-function author(software::Software)
-    software.pyobj.get("author")::Maybe{String}
-end
-
-function homepage(software::Software)::Maybe{URI}
-    homepage = software.pyobj.get("homepage", empty)
-    if homepage === empty
-        return nothing
-    end
-    URI(homepage)::URI
-end
-
-function version(software::Software)::Union{VersionNumber, String}
-    version = software.pyobj.get("version")::String
-    try
-        VersionNumber(version)
-    catch
-        version
-    end
-end
-
-
-
-################################################################################
-
-# id: "http://stsci.edu/schemas/asdf/core/ndarray-1.0.0"
-# tag: "tag:stsci.edu:asdf/core/ndarray-1.0.0"
-# title: An *n*-dimensional array.
-
-abstract type Datatype end
-
-@enum ScalarType begin
-    int8
-    uint8
-    int16
-    uint16
-    int32
-    uint32
-    int64
-    uint64
-    float32
-    float64
-    complex64
-    complex128
-    bool8
-    ascii
-    ucs4
-end
-const string2scalartype = Dict{String, ScalarType}(
-    "int8"       => int8,
-    "uint8"      => uint8,
-    "int16"      => int16,
-    "uint16"     => uint16,
-    "int32"      => int32,
-    "uint32"     => uint32,
-    "int64"      => int64,
-    "uint64"     => uint64,
-    "float32"    => float32,
-    "float64"    => float64,
-    "complex64"  => complex64,
-    "complex128" => complex128,
-    "bool8"      => bool8,
-    "ascii"      => ascii,
-    "ucs4"       => ucs4)
-const scalartype2type = Dict{ScalarType, Type}(
-    int8       => Int8,
-    uint8      => UInt8,
-    int16      => Int16,
-    uint16     => UInt16,
-    int32      => Int32,
-    uint32     => UInt32,
-    int64      => Int64,
-    uint64     => UInt64,
-    float32    => Float32,
-    float64    => Float64,
-    complex64  => ComplexF32,
-    complex128 => ComplexF64,
-    bool8      => Bool,
-    ascii      => String,
-    ucs4       => String)
-
-struct ScalarDatatype <: Datatype
-    type_::ScalarType
-    length::Int                 # only for ascii and ucs4; else -1
-    function ScalarDatatype(type_::ScalarType)
-        @assert type_ in [
-            int8, uint8, int16, uint16, int32, uint32, int64, uint64,
-            float32, float64, complex64, complex128,
-            bool8]
-        new(type_, -1)
-    end
-    function ScalarDatatype(type_::ScalarType, length::Int)
-        @assert type_ in [ascii, ucs4]
-        @assert length >= 0
-        new(type_, length)
-    end
-end
-
-function ScalarDatatype(type_::String, length...)
-    ScalarDatatype(string2scalartype[type_], length...)
-end
-
-function julia_type(scalardatatype::ScalarDatatype)
-    scalartype2type[scalardatatype.type_]
-end
-
-@enum Byteorder big little
-
-struct Field
-    name::Maybe{String}
-    datatype::Datatype
-    byteorder::Maybe{Byteorder}
-    shape::Maybe{Vector{Int}}
-end
-
-struct DatatypeList <: Datatype
-    types::Vector{Field}
-end
-
-function Datatype(dtype::PyObject)
-    if dtype.names !== nothing
-        # fields = []
-        # for name in dtype.names:
-        #     field = dtype.fields[name][0]
-        #     d = {}
-        #     d['name'] = name
-        #     field_dtype, byteorder = numpy_dtype_to_asdf_datatype(field)
-        #     d['datatype'] = field_dtype
-        #     if include_byteorder:
-        #         d['byteorder'] = byteorder
-        #     if field.shape:
-        #         d['shape'] = list(field.shape)
-        #     fields.append(d)
-        # return fields, numpy_byteorder_to_asdf_byteorder(dtype.byteorder)
-        @assert false
-
-    elseif dtype.subdtype !== nothing
-        # return numpy_dtype_to_asdf_datatype(dtype.subdtype[0])
-        @assert false
-
-    elseif dtype.name in keys(string2scalartype)
-        return ScalarDatatype(dtype.name)
-
-    elseif dtype.name == "bool"
-        return ScalarDatatype(bool8)
-
-    elseif startswith(dtype.name, "string") ||
-            startswith(dtype.name, "bytes")
-        return ScalarDatatype(ascii, Int(dtype.itemsize))
-
-    elseif startswith(dtype.name, "unicode") ||
-            startswith(dtype.name, "str")
-        return ScalarDatatype(ucs4, Int(dtype.itemsize) ÷ 4)
-
-    end
-    @assert false
-end
-
-
-
-const PyArrayTypes = Union{
-    Bool,
-    Int8, Int16, Int32, Int64, Int128,
-    UInt8, UInt16, UInt32, UInt64, UInt128,
-    Float16, Float32, Float64,
-    ComplexF16, ComplexF32, ComplexF64}
-
-"""An *n*-dimensional array"""
-struct NDArray{T, D, Repr <: Union{PyArray, PyObject}} <: DenseArray{T, D}
-    # An NDArray either uses a PyArray (if possible) or a PyObject
-    # as internal representation
-    repr::Repr
-    function NDArray{T, D, PyArray{T, D}}(pyobj::PyObject) where {T, D}
-        new{T, D, PyArray{T, D}}(PyArray(pyobj))
-    end
-    function NDArray{T, D, PyObject}(pyobj::PyObject) where {T, D}
-        new{T, D, PyObject}(pyobj)
-    end
-    function NDArray{T, D}(pyobj::PyObject) where {T, D}
-        isefficient = T <: PyArrayTypes
-        if isefficient
-            # Python 3 requires array-like Python object to support a
-            # "buffer protocol" as defined in PEP 3118. Apparently,
-            # asdf.py's "NDArrayType" does not, and the call to
-            # "PyArray_Info" fails.
-            isefficient = PyCall.isbuftype(pyobj)
-        end
-        if isefficient
-            info = PyArray_Info(pyobj)
-            isefficient = info.native # byteorder is native
-        end
-        if isefficient
-            # There is an efficient PyArray implementation
-            NDArray{T, D, PyArray{T, D}}(pyobj)
-        else
-            # Fallback for other (e.g. string) types
-            NDArray{T, D, PyObject}(pyobj)
-        end
-    end
-    function NDArray(pyobj::PyObject)
-        # Determine element type and rank
-        T = julia_type(Datatype(pyobj.dtype))
-        D = length(pyobj.shape)
-        NDArray{T, D}(pyobj)
-    end
-end
-tag2asdftype["tag:stsci.edu:asdf/core/ndarray-1.0.0"] = NDArray
-
-const FastNDArray = NDArray{T, D, PyArray{T, D}} where {T <: PyArrayTypes, D}
-const SlowNDArray = NDArray{T, D, PyObject} where {T, D}
-pyarr(arr::FastNDArray{T, D}) where {T, D} = arr.repr::PyArray{T, D}
-pyobj(arr::SlowNDArray{T, D}) where {T, D} = arr.repr::PyObject
-
-isefficient(::Type{NDArray{T, D, PyArray{T, D}}}) where {T, D} = true
-isefficient(::Type{NDArray{T, D, PyObject}}) where {T, D} = false
-isefficient(::T) where {T <: NDArray} = isefficient(T)
-
-# PyArray-based implementation
-Base.axes(arr::FastNDArray) = axes(pyarr(arr))
-Base.eachindex(ind::IndexCartesian, arr::FastNDArray) =
-    eachindex(ind, pyarr(arr))
-Base.eachindex(ind::IndexLinear, arr::FastNDArray) = eachindex(ind, pyarr(arr))
-Base.getindex(arr::FastNDArray, i) = pyarr(arr)[i]
-Base.length(arr::FastNDArray) = length(pyarr(arr))
-Base.ndims(arr::FastNDArray) = ndims(pyarr(arr))
-Base.size(arr::FastNDArray) = size(pyarr(arr))
-Base.strides(arr::FastNDArray) = strides(pyarr(arr))
-
-Base.IteratorSize(::Type{<:NDArray{T, D, PyArray{T, D}}}) where {T, D} =
-    HasShape{D}()
-Base.iterate(arr::FastNDArray, state...) = iterate(pyarr(arr), state...)
-
-# PyObject-based implementation
-function Base.axes(arr::SlowNDArray{T, D}) where {T, D}
-    map(sz -> Base.Slice(0:sz-1),
-        size(arr))::NTuple{D, Base.Slice{UnitRange{Int}}}
-end
-function Base.eachindex(::IndexCartesian, arr::SlowNDArray)
-    CartesianIndices(axes(arr))
-end
-function Base.eachindex(::IndexLinear, arr::SlowNDArray)
-    axes(arr, 1)
-end
-function Base.getindex(arr::SlowNDArray{T, D}, i::NTuple{D, Int}) where {T, D}
-    @boundscheck @assert all(checkindex(Bool, axes(arr)[d], i[d]) for d in 1:D)
-    pycall(pyobj(arr).__getitem__, T, i)::T
-end
-function Base.getindex(arr::SlowNDArray{T, D}, i::NTuple{D, I}) where {T, D, I}
-    arr[NTuple{D, Int}(i)]
-end
-function Base.getindex(arr::SlowNDArray{T, D}, i::CartesianIndex{D}) where {
-        T, D}
-    arr[Tuple(i)]
-end
-function Base.getindex(arr::SlowNDArray, i...)
-    arr[i]
-end
-function Base.ndims(arr::SlowNDArray{T, D}) where {T, D}
-    D
-end
-function Base.size(arr::SlowNDArray{T, D}) where {T, D}
-    NTuple{D, Int}(pyobj(arr).shape::NTuple{D, Int64})
-end
-function Base.strides(arr::SlowNDArray)
-    Base.size_to_strides(1, reverse(size(arr))...)
-end
-
-Base.IteratorSize(::Type{<:SlowNDArray{T, D}}) where {T, D} = HasShape{D}()
-function Base.iterate(arr::SlowNDArray, state...)
-    iter = eachindex(arr)
-    res = iterate(iter, state...)
-    if res === nothing
-        return nothing
-    end
-    idx, state = res
-    arr[idx], state
-end
-
-
-
-################################################################################
-
-const ASDFType = Union{Tree, Software, NDArray}
-
-function Base.getindex(obj::ASDFType, key::String)
-    additionalProperties(obj)   # check
-    makeASDFType(get(obj.pyobj, PyObject, key))
-end
-function Base.get(obj::ASDFType, key::String, default)
-    additionalProperties(obj)   # check
-    value = get(obj.pyobj, PyObject, key, empty)
-    if value === empty
-        return default
-    end
-    makeASDFType(value)::ASDFType
-end
-function Base.setindex!(obj::ASDFType, value::ASDFType, key::String)
-    additionalProperties(obj)   # check
-    obj.pyobj[key] = value.pyobj
-end
-function Base.delete!(obj::ASDFType, key::String)
-    additionalProperties(obj)   # check
-    delete!(obj.pyobj, key)
-    obj
-end
-
-function Base.length(obj::ASDFType)
-    Int(obj.pyobj.__len__())
-end
-function Base.keys(obj::ASDFType)
-    iter = obj.pyobj.keys().__iter__()
-    keys = String[]
+    block_range = nothing
     while true
-        try
-            key = iter.__next__()
-            push!(keys, key)
-        catch
-            # TODO: Check for Python StopIteration exception
-            break
+        seek(io, pos)
+        nb = readbytes!(io, buffer)
+        block_range = blockstart = findfirst(block_magic_token, @view buffer[1:(nb - 1)])
+        block_range !== nothing && break
+        did_reach_eof = eof(io)
+        if did_reach_eof
+            # We found nothing
+            return nothing
         end
+        pos += nb - (length(block_magic_token) - 1)
     end
-    Set(keys)
+
+    # Found a block header
+    block_start = pos + first(block_range) - 1
+    return block_start
 end
-function Base.iterate(obj::ASDFType)
-    Base.iterate(obj, obj.pyobj.__iter__())
+
+big2native_U8(bytes::AbstractVector{UInt8}) = bytes[1]
+big2native_U16(bytes::AbstractVector{UInt8}) = (UInt16(bytes[1]) << 8) | bytes[2]
+big2native_U32(bytes::AbstractVector{UInt8}) = (UInt32(big2native_U16(@view bytes[1:2])) << 16) | big2native_U16(@view bytes[3:4])
+big2native_U64(bytes::AbstractVector{UInt8}) = (UInt64(big2native_U32(@view bytes[1:4])) << 32) | big2native_U32(@view bytes[5:8])
+
+native2big_U8(val::UInt8) = UInt8[val]
+native2big_U16(val::UInt16) = UInt8[(val >>> 0x08) & 0xff, (val >>> 0x00) & 0xff]
+native2big_U32(val::UInt32) = UInt8[(val >>> 0x18) & 0xff, (val >>> 0x10) & 0xff, (val >>> 0x08) & 0xff, (val >>> 0x00) & 0xff]
+function native2big_U64(val::UInt64)
+    UInt8[
+        (val >>> 0x38) & 0xff,
+        (val >>> 0x30) & 0xff,
+        (val >>> 0x28) & 0xff,
+        (val >>> 0x20) & 0xff,
+        (val >>> 0x18) & 0xff,
+        (val >>> 0x10) & 0xff,
+        (val >>> 0x08) & 0xff,
+        (val >>> 0x00) & 0xff,
+    ]
 end
-function Base.iterate(obj::ASDFType, iter)
-    try
-        iter.__next__(), iter
-    catch
-        # TODO: Check for Python StopIteration exception
-        nothing
+native2big_U8(val::Integer) = native2big_U8(UInt8(val))
+native2big_U16(val::Integer) = native2big_U16(UInt16(val))
+native2big_U32(val::Integer) = native2big_U32(UInt32(val))
+native2big_U64(val::Integer) = native2big_U64(UInt64(val))
+
+function read_block_header(io::IO, position::Int64)
+    # Read block header
+    max_header_size = 6 + 48
+    header = Array{UInt8}(undef, max_header_size)
+    seek(io, position)
+    nb = readbytes!(io, header)
+    # TODO: Better error message
+    @assert nb == length(header)
+
+    # Decode block header
+    token = @view header[1:4]
+    header_size = big2native_U16(@view header[5:6])
+    flags = big2native_U32(@view header[7:10])
+    compression = @view header[11:14]
+    allocated_size = big2native_U64(@view header[15:22])
+    used_size = big2native_U64(@view header[23:30])
+    data_size = big2native_U64(@view header[31:38])
+    checksum = @view header[39:54]
+
+    # TODO: Better error message
+    @assert token == block_magic_token
+
+    STREAMED = Bool(flags & 0x1)
+    # We don't handle streamed blocks yet
+    @assert !STREAMED
+
+    # TODO: Better error message
+    @assert allocated_size >= used_size
+
+    return BlockHeader(io, position, token, header_size, flags, compression, allocated_size, used_size, data_size, checksum)
+end
+
+function find_all_blocks(io::IO, pos::Int64=Int64(0))
+    headers = BlockHeader[]
+    pos = find_next_block(io, pos)
+    while pos !== nothing
+        header = read_block_header(io, pos)
+        push!(headers, header)
+        pos = Int64(header.position + 6 + header.header_size + header.allocated_size)
+        pos = find_next_block(io, pos)
     end
+    return headers
+end
+
+function read_block(header::BlockHeader)
+    block_data_start = header.position + 6 + header.header_size
+    seek(header.io, block_data_start)
+    data = Array{UInt8}(undef, header.used_size)
+    nb = readbytes!(header.io, data)
+    # TODO: Better error message
+    @assert nb == length(data)
+
+    # Check checksum
+    if any(header.checksum != 0)
+        actual_checksum = md5(data)
+        # TODO: Better error message
+        @assert all(actual_checksum == header.checksum)
+    end
+
+    # Decompress data
+    # TODO: Read directly from file
+    compression = compression_enums[header.compression]
+    if compression == C_None
+        # do nothing, the block is uncompressed
+    elseif compression == C_Xz
+        data = transcode(XzDecompressor, data)
+    else
+        if compression == C_Blosc
+            codec = BloscCodec()
+        elseif compression == C_Bzip2
+            codec = BZ2Codec()
+        elseif compression == C_Lz4
+            codec = LZ4FrameCodec()
+        elseif compression == C_Zlib
+            codec = ZlibCodec()
+        elseif compression == C_Zstd
+            codec = ZstdCodec()
+        else
+            # TODO: Better error message
+            @assert false
+        end
+        data = decode(codec, data)
+    end
+    data::AbstractVector{UInt8}
+
+    # TODO: Better error message
+    @assert length(data) == header.data_size
+
+    return data
+end
+
+################################################################################
+
+"""
+    @enum ASDF.Byteorder Byteorder_little Byteorder_big
+"""
+@enum Byteorder Byteorder_little Byteorder_big
+const byteorder_string_dict = Dict{Byteorder,String}(Byteorder_little => "little", Byteorder_big => "big")
+const string_byteorder_dict = Dict{String,Byteorder}(val => key for (key, val) in byteorder_string_dict)
+
+"""
+    ASDF.Byteorder(str::AbstractString)::Byteorder
+"""
+Byteorder(str::AbstractString) = string_byteorder_dict[str]
+
+"""
+    string(byteorder::Byteorder)::AbstractString
+"""
+Base.string(byteorder::Byteorder) = byteorder_string_dict[byteorder]
+Base.show(io::IO, byteorder::Byteorder) = show(io, string(byteorder))
+
+const host_byteorder = reinterpret(UInt8, UInt16[1])[1] == 1 ? Byteorder_little : Byteorder_big
+
+################################################################################
+
+"""
+Careful, there is also `Base.DataType`, which is a different type.
+"""
+@enum Datatype begin
+    Datatype_bool8
+    Datatype_int8
+    Datatype_int16
+    Datatype_int32
+    Datatype_int64
+    Datatype_int128
+    Datatype_uint8
+    Datatype_uint16
+    Datatype_uint32
+    Datatype_uint64
+    Datatype_uint128
+    Datatype_float16
+    Datatype_float32
+    Datatype_float64
+    Datatype_complex32
+    Datatype_complex64
+    Datatype_complex128
+end
+const datatype_string_dict = Dict{Datatype,String}(
+    Datatype_bool8 => "bool8",
+    Datatype_int8 => "int8",
+    Datatype_int16 => "int16",
+    Datatype_int32 => "int32",
+    Datatype_int64 => "int64",
+    Datatype_int128 => "int128",
+    Datatype_uint8 => "uint8",
+    Datatype_uint16 => "uint16",
+    Datatype_uint32 => "uint32",
+    Datatype_uint64 => "uint64",
+    Datatype_uint128 => "uint128",
+    Datatype_float16 => "float16",
+    Datatype_float32 => "float32",
+    Datatype_float64 => "float64",
+    Datatype_complex32 => "complex32",
+    Datatype_complex64 => "complex64",
+    Datatype_complex128 => "complex128",
+)
+const string_datatype_dict = Dict{String,Datatype}(val => key for (key, val) in datatype_string_dict)
+const datatype_type_dict = Dict{Datatype,Type}(
+    Datatype_bool8 => Bool,
+    Datatype_int8 => Int8,
+    Datatype_int16 => Int16,
+    Datatype_int32 => Int32,
+    Datatype_int64 => Int64,
+    Datatype_int128 => Int128,
+    Datatype_uint8 => UInt8,
+    Datatype_uint16 => UInt16,
+    Datatype_uint32 => UInt32,
+    Datatype_uint64 => UInt64,
+    Datatype_uint128 => UInt128,
+    Datatype_float16 => Float16,
+    Datatype_float32 => Float32,
+    Datatype_float64 => Float64,
+    Datatype_complex32 => Complex{Float16},
+    Datatype_complex64 => Complex{Float32},
+    Datatype_complex128 => Complex{Float64},
+)
+const type_datatype_dict = Dict{Type,Datatype}(val => key for (key, val) in datatype_type_dict)
+
+Datatype(str::AbstractString) = string_datatype_dict[str]
+Base.string(datatype::Datatype) = datatype_string_dict[datatype]
+Base.show(io::IO, datatype::Datatype) = show(io, string(datatype))
+
+Base.Type(datatype::Datatype) = datatype_type_dict[datatype]
+Datatype(type::Type) = type_datatype_dict[type]
+
+################################################################################
+
+struct NDArray
+    lazy_block_headers::LazyBlockHeaders
+
+    source::Union{Nothing,Int64,AbstractString}
+    data::Union{Nothing,AbstractArray}
+    shape::Vector{Int64}
+    datatype::Datatype
+    byteorder::Byteorder
+    offset::Int64
+    strides::Vector{Int64} # stored in ASDF (Python/C) order, not in Julia (Fortran) order
+    # mask
+
+    function NDArray(
+        lazy_block_headers::LazyBlockHeaders,
+        source::Union{Nothing,Int64,AbstractString},
+        data::Union{Nothing,AbstractArray},
+        shape::Vector{Int64},
+        datatype::Datatype,
+        byteorder::Byteorder,
+        offset::Int64,
+        strides::Vector{Int64},
+    )
+        @assert (source === nothing) + (data === nothing) == 1
+        @assert source === nothing || source >= 0
+        @assert data === nothing || eltype(data) == Type(datatype)
+        @assert data === nothing || size(data) == Tuple(reverse(shape))
+        @assert offset >= 0
+        @assert length(shape) == length(strides)
+        @assert all(shape .>= 0)
+        @assert all(strides .> 0)
+        return new(lazy_block_headers, source, data, shape, datatype, byteorder, offset, strides)
+    end
+end
+
+function NDArray(
+    lazy_block_headers::LazyBlockHeaders,
+    source::Union{Nothing,Integer},
+    data::Union{Nothing,AbstractArray},
+    shape::AbstractVector{<:Integer},
+    datatype::Union{Datatype,AbstractString},
+    byteorder::Union{Nothing,Byteorder,AbstractString},
+    offset::Union{Nothing,Integer}=0,
+    strides::Union{Nothing,<:AbstractVector{<:Integer}}=nothing,
+)
+    if source isa Integer
+        source = Int64(source)
+    end
+    if datatype isa AbstractString
+        datatype = Datatype(datatype)
+    end
+    if data !== nothing
+        # Convert arrays of arrays into multi-dimensional arrays
+        data = stack(data)
+        data = reshape(data, Tuple(reverse(shape)))
+        # Correct element type
+        data = Array{Type(datatype)}(data)
+    end
+    if byteorder isa Nothing
+        byteorder = host_byteorder
+    elseif byteorder isa AbstractString
+        byteorder = Byteorder(byteorder)
+    end
+    if offset isa Nothing
+        offset = 0
+    end
+    if strides isa Nothing
+        # Calculate byte strides in C order
+        sz = sizeof(Type(datatype))
+        strides = reverse(cumprod([sz; reverse(shape[(begin + 1):end])]))
+    end
+    return NDArray(
+        lazy_block_headers, source, data, Vector{Int64}(shape), datatype, byteorder, Int64(offset), Vector{Int64}(strides)
+    )
+end
+
+function make_construct_yaml_ndarray(block_headers::LazyBlockHeaders)
+    function construct_yaml_ndarray(constructor::YAML.Constructor, node::YAML.Node)
+        mapping = YAML.construct_mapping(constructor, node)
+        source = get(mapping, "source", nothing)::Union{Nothing,Integer}
+        data = get(mapping, "data", nothing)::Union{Nothing,AbstractVector}
+        shape = mapping["shape"]::AbstractVector{<:Integer}
+        datatype = mapping["datatype"]::AbstractString
+        byteorder = get(mapping, "byteorder", nothing)::Union{Nothing,AbstractString}
+        offset = get(mapping, "offset", nothing)::Union{Nothing,Integer}
+        strides = get(mapping, "strides", nothing)::Union{Nothing,AbstractVector{<:Integer}}
+        return NDArray(block_headers, source, data, shape, datatype, byteorder, offset, strides)
+    end
+    return construct_yaml_ndarray
+end
+
+function Base.getindex(ndarray::NDArray)
+    if ndarray.data !== nothing
+        data = ndarray.data
+        @assert ndarray.byteorder == host_byteorder
+    elseif ndarray.source !== nothing
+        data = read_block(ndarray.lazy_block_headers.block_headers[ndarray.source + 1])
+        # Handle strides and offset.
+        # Do this before imposing the datatype because strides are given in bytes.
+        typesize = sizeof(Type(ndarray.datatype))
+        # Add a new dimension for the bytes that make up the datatype
+        shape = (typesize, reverse(ndarray.shape)...)
+        strides = (1, reverse(ndarray.strides)...)
+        data = StridedView(data, Int.(shape), Int.(strides), Int(ndarray.offset))
+        # Impose datatype
+        data = reinterpret(Type(ndarray.datatype), data)
+        # Remove the new dimension again
+        data = reshape(data, shape[2:end])
+        # Correct byteorder if necessary.
+        # Do this after imposing the datatype since byteorder depends on the datatype.
+        if ndarray.byteorder != host_byteorder
+            map!(bswap, data, data)
+        end
+    else
+        @assert false
+    end
+
+    # Check array layout
+    @assert size(data) == Tuple(reverse(ndarray.shape))
+    @assert eltype(data) == Type(ndarray.datatype)
+    @assert sizeof(eltype(data)) .* Base.strides(data) == Tuple(reverse(ndarray.strides))
+
+    return data::AbstractArray
+end
+
+################################################################################
+
+struct NDArrayChunk
+    start::Vector{Int64}
+    ndarray::NDArray
+
+    function NDArrayChunk(start::Vector{Int64}, ndarray::NDArray)
+        @assert length(start) == length(ndarray.strides)
+        @assert all(start .>= 0)
+        return new(start, ndarray)
+    end
+end
+
+function NDArrayChunk(start::AbstractVector{<:Integer}, ndarray::NDArray)
+    return NDArrayChunk(Vector{Int64}(start), ndarray)
+end
+
+function make_construct_yaml_ndarray_chunk(block_headers::LazyBlockHeaders)
+    function construct_yaml_ndarray_chunk(constructor::YAML.Constructor, node::YAML.Node)
+        mapping = YAML.construct_mapping(constructor, node)
+        start = mapping["start"]::AbstractVector{<:Integer}
+        ndarray = mapping["ndarray"]::NDArray
+        return NDArrayChunk(start, ndarray)
+    end
+    return construct_yaml_ndarray_chunk
+end
+
+struct ChunkedNDArray
+    shape::Vector{Int64}
+    datatype::Datatype
+    chunks::AbstractVector{NDArrayChunk}
+
+    function ChunkedNDArray(shape::Vector{Int64}, datatype::Datatype, chunks::Vector{NDArrayChunk})
+        @assert all(shape .>= 0)
+        for chunk in chunks
+            @assert length(chunk.start) == length(shape)
+            # We allow overlaps and gaps in the chunks
+            @assert all(chunk.start .<= shape)
+            @assert all(chunk.start + chunk.ndarray.shape .<= shape)
+            @assert chunk.ndarray.datatype == datatype
+        end
+        return new(shape, datatype, chunks)
+    end
+end
+
+function ChunkedNDArray(
+    shape::AbstractVector{<:Integer}, datatype::Union{Datatype,AbstractString}, chunks::AbstractVector{NDArrayChunk}
+)
+    if datatype isa AbstractString
+        datatype = Datatype(datatype)
+    end
+    return ChunkedNDArray(Vector{Int64}(shape), datatype, chunks)
+end
+
+function make_construct_yaml_chunked_ndarray(block_headers::LazyBlockHeaders)
+    function construct_yaml_chunked_ndarray(constructor::YAML.Constructor, node::YAML.Node)
+        mapping = YAML.construct_mapping(constructor, node)
+        shape = mapping["shape"]::AbstractVector{<:Integer}
+        datatype = mapping["datatype"]::AbstractString
+        chunks = mapping["chunks"]::AbstractVector{NDArrayChunk}
+        return ChunkedNDArray(shape, datatype, chunks)
+    end
+    return construct_yaml_chunked_ndarray
+end
+
+function Base.getindex(chunked_ndarray::ChunkedNDArray)
+    shape = chunked_ndarray.shape
+    datatype = Type(chunked_ndarray.datatype)
+    data = Array{datatype}(undef, reverse(shape)...)
+    for chunk in chunked_ndarray.chunks
+        start = CartesianIndex(reverse(chunk.start .+ 1)...)
+        shape = CartesianIndex(reverse(chunk.start + chunk.ndarray.shape)...)
+        data[start:shape] .= chunk.ndarray[]
+    end
+    return data::AbstractArray
+end
+
+################################################################################
+
+struct ASDFFile
+    filename::AbstractString
+    metadata::Dict{Any,Any}
+    lazy_block_headers::LazyBlockHeaders
+end
+
+function YAML.write(file::ASDFFile)
+    return "[ASDF file \"$(file.filename)\"]\n" * YAML.write(file.metadata)
+end
+
+################################################################################
+
+asdf_constructors = copy(YAML.default_yaml_constructors)
+asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = asdf_constructors["tag:yaml.org,2002:map"]
+asdf_constructors["tag:stsci.edu:asdf/core/software-1.0.0"] = asdf_constructors["tag:yaml.org,2002:map"]
+
+function load_file(filename::AbstractString)
+    io = open(filename, "r")
+    lazy_block_headers = LazyBlockHeaders()
+    construct_yaml_ndarray = make_construct_yaml_ndarray(lazy_block_headers)
+    construct_yaml_chunked_ndarray = make_construct_yaml_chunked_ndarray(lazy_block_headers)
+    construct_yaml_ndarray_chunk = make_construct_yaml_ndarray_chunk(lazy_block_headers)
+
+    asdf_constructors′ = copy(asdf_constructors)
+    asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-1.0.0"] = construct_yaml_ndarray
+    asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-chunk-1.0.0"] = construct_yaml_ndarray_chunk
+    asdf_constructors′["tag:stsci.edu:asdf/core/chunked-ndarray-1.0.0"] = construct_yaml_chunked_ndarray
+
+    metadata = YAML.load(io, asdf_constructors′)
+    # lazy_block_headers.block_headers = find_all_blocks(io, position(io))
+    lazy_block_headers.block_headers = find_all_blocks(io)
+    return ASDFFile(filename, metadata, lazy_block_headers)
+end
+
+################################################################################
+################################################################################
+################################################################################
+
+struct ASDFLibrary
+    name::AbstractString
+    author::AbstractString
+    homepage::AbstractString
+    version::AbstractString
+end
+function YAML._print(io::IO, val::ASDFLibrary, level::Int=0, ignore_level::Bool=false)
+    println(io, "!core/software-1.0.0")
+    library = Dict(:name => val.name, :author => val.author, :homepage => val.homepage, :version => val.version)
+    YAML._print(io, library, level, ignore_level)
+end
+
+struct NDArrayWrapper
+    array::AbstractArray
+    compression::Compression
+    inline::Bool
+end
+function NDArrayWrapper(array::AbstractArray; compression::Compression=C_Bzip2, inline::Bool=false)
+    return NDArrayWrapper(array, compression, inline)
+end
+Base.getindex(val::NDArrayWrapper) = val.array
+
+struct Blocks
+    arrays::Vector{NDArrayWrapper}
+    positions::Vector{Int64}
+    Blocks() = new(NDArrayWrapper[], Int64[])
+end
+function Base.empty!(blocks::Blocks)
+    empty!(blocks.arrays)
+    empty!(blocks.positions)
+    nothing
+end
+Base.isempty(blocks::Blocks) = isempty(blocks.arrays) && isempty(blocks.positions)
+# Unfortunately we need a global variable.
+# This means that `write_file` is not thread-safe.
+const blocks::Blocks = Blocks()
+
+function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bool=false)
+    if val.inline
+        data = val.array
+        # Split multidimensional arrays into array-of-arrays
+        data = eachslice(data; dims=Tuple(2:ndims(data)))
+        ndarray = Dict(
+            :data => data,
+            :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
+            :datatype => string(Datatype(eltype(val.array))),
+            # :offset => 0::Integer,
+            # :strides => ::Vector{Int64},
+        )
+    else
+        global blocks
+        source = length(blocks.arrays)
+        push!(blocks.arrays, val)
+        ndarray = Dict(
+            :source => source::Integer,
+            :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
+            :datatype => string(Datatype(eltype(val.array))),
+            :byteorder => string(host_byteorder::Byteorder),
+            # :offset => 0::Integer,
+            # :strides => ::Vector{Int64},
+        )
+    end
+    # println(io, YAML._indent("-\n", level), "!core/chunked-ndarray-1.0.0")
+    println(io, "!core/ndarray-1.0.0")
+    YAML._print(io, ndarray, level, ignore_level)
+end
+
+function write_file(filename::AbstractString, document::Dict{Any,Any})
+    # Set up block descriptors
+    global blocks
+    empty!(blocks)
+
+    # Ensure standard tags are present
+    # TODO:
+    # - provide a function that generates a standard empty document
+    # - don't modify the input
+    # - remove the `{Any,Any}` in the test cases
+    # - maybe make the document not a `Dict` but the stuff with the `metadata` that the writer returns?
+    get!(document, "asdf/library") do
+        ASDFLibrary(software_name, software_author, software_homepage, software_version)
+    end
+
+    # Write YAML part of file
+    io = open(filename, "w")
+    println(
+        io,
+        """#ASDF 1.0.0
+           #ASDF_STANDARD 1.2.0
+           # This is an ASDF file <https://asdf-standard.readthedocs.io/>
+           %YAML 1.1
+           %TAG ! tag:stsci.edu:asdf/
+           ---
+           !core/asdf-1.1.0""",
+    )
+    YAML.write(io, document)
+    println(io, "...")
+
+    # Write blocks
+    for array in blocks.arrays
+        source = length(blocks.positions)
+        pos = position(io)
+        push!(blocks.positions, pos)
+
+        # TODO: create function write_block_header
+        max_header_size = 6 + 48
+        header = Array{UInt8}(undef, max_header_size)
+        # # Skip the header.; the real header will be
+        # # written later once its contents are known
+        # skip(io, length(header))
+
+        token = block_magic_token
+        header_size = 48
+        flags = 0               # not streamed
+        compression = compression_keys[array.compression]
+        data_size = sizeof(array.array)
+
+        # Write block
+        # TODO: create function write_block
+
+        input = array.array
+        # Make dense (contiguous) if necessary
+        input = input isa DenseArray ? input : Array(input)
+        # Reshape to 1D
+        input = reshape(input, :)
+        # Reinterpret as UInt8
+        input = reinterpret(UInt8, input)
+
+        # TODO: Write directly to file
+        if array.compression == C_None
+            data = input
+        elseif array.compression == C_Xz
+            # Copy
+            # TODO: Don't copy input
+            input = input isa Vector ? input : Vector(input)
+            data = transcode(XzCompressor, input)
+        else
+            if array.compression == C_Blosc
+                encode_options = BloscEncodeOptions(; clevel=9, doshuffle=2, typesize=sizeof(eltype(array.array)), compressor="zstd")
+            elseif array.compression == C_Bzip2
+                encode_options = BZ2EncodeOptions(; blockSize100k=9)
+            elseif array.compression == C_Lz4
+                encode_options = LZ4FrameEncodeOptions(; compressionLevel=12, blockSizeID=7)
+            elseif array.compression == C_Zlib
+                encode_options = ZlibEncodeOptions(; level=9)
+            elseif array.compression == C_Zstd
+                encode_options = ZstdEncodeOptions(; compressionLevel=22)
+            else
+                @assert false
+            end
+            data = encode(encode_options, input)
+        end
+
+        # Don't compress unless it reduces the size
+        if length(data) >= length(input)
+            compression = compression_keys[C_None]
+            data = input
+        end
+
+        # We need the standard, dense layout
+        data::AbstractVector{UInt8}
+        data::Union{DenseArray,Base.ReinterpretArray{<:Any,<:Any,<:Any,<:DenseArray}}
+
+        used_size = length(data)
+        allocated_size = used_size
+        checksum = Vector{UInt8}(md5(data))
+
+        # Fill header
+        header[1:4] .= token
+        header[5:6] .= native2big_U16(header_size)
+        header[7:10] .= native2big_U32(flags)
+        header[11:14] .= compression
+        header[15:22] .= native2big_U64(allocated_size)
+        header[23:30] .= native2big_U64(used_size)
+        header[31:38] .= native2big_U64(data_size)
+        header[39:54] .= checksum
+
+        # Write header
+        # endpos = position(io)
+        # seek(io, pos)
+        write(io, header)
+        # seek(io, endpos)
+
+        # Write data
+        write(io, data)
+
+        # Check consistency
+        endpos = position(io)
+        @assert endpos == pos + 6 + header_size + allocated_size
+    end
+    @assert length(blocks.positions) == length(blocks.arrays)
+
+    # Write block list
+    println(io, "#ASDF BLOCK INDEX")
+    println(io, "%YAML 1.1")
+    println(io, "---")
+    print(io, "[")
+    for pos in blocks.positions
+        print(io, pos, ",")
+    end
+    println(io, "]")
+    println(io, "...")
+
+    # Close file
+    close(io)
+
+    # Clean up
+    empty!(blocks)
+
+    # Done.
+    return nothing
 end
 
 end

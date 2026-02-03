@@ -1,0 +1,9 @@
+[deps]
+ASDF = "686f71d1-807d-59a4-a860-28280ea06d7b"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+
+[compat]
+Documenter = "1"
+
+[source]
+ASDF = {path = ".."}
