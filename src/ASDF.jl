@@ -1,16 +1,15 @@
 module ASDF
 
-using BlockArrays
-using CodecXz
-using ChunkCodecLibBlosc
-using ChunkCodecLibBzip2
-using ChunkCodecLibLz4
-using ChunkCodecLibZlib
-using ChunkCodecLibZstd
-using MD5
-using PkgVersion
-using StridedViews
-using YAML
+using ChunkCodecLibBlosc: BloscCodec, BloscEncodeOptions
+using ChunkCodecLibBzip2: BZ2Codec, BZ2EncodeOptions
+using ChunkCodecLibLz4: LZ4FrameCodec, LZ4FrameEncodeOptions
+using ChunkCodecLibZlib: ZlibCodec, ZlibEncodeOptions
+using ChunkCodecLibZstd: ZstdCodec, ZstdEncodeOptions, decode, encode
+using CodecXz: XzCompressor, XzDecompressor
+using MD5: md5
+using PkgVersion: PkgVersion
+using StridedViews: StridedView
+using YAML: YAML
 
 ################################################################################
 
