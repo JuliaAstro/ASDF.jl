@@ -514,6 +514,7 @@ end
 asdf_constructors = copy(YAML.default_yaml_constructors)
 asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = asdf_constructors["tag:yaml.org,2002:map"]
 asdf_constructors["tag:stsci.edu:asdf/core/software-1.0.0"] = asdf_constructors["tag:yaml.org,2002:map"]
+asdf_constructors["tag:stsci.edu:asdf/core/extension_metadata-1.0.0"] = asdf_constructors["tag:yaml.org,2002:map"]
 
 function load_file(filename::AbstractString)
     io = open(filename, "r")
