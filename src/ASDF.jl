@@ -116,7 +116,9 @@ function read_block_header(io::IO, position::Int64)
     seek(io, position)
     nb = readbytes!(io, header)
     # TODO: Better error message
-    @assert nb == length(header)
+    if nb != length(header)
+        error("Number of bytes read from stream does not match length of header")
+    end
 
     # Decode block header
     token = @view header[1:4]
@@ -128,15 +130,20 @@ function read_block_header(io::IO, position::Int64)
     data_size = big2native_U64(@view header[31:38])
     checksum = @view header[39:54]
 
-    # TODO: Better error message
-    @assert token == block_magic_token
+    if token != block_magic_token
+        error("Block does not start with magic number")
+    end
 
     STREAMED = Bool(flags & 0x1)
     # We don't handle streamed blocks yet
-    @assert !STREAMED
+    if STREAMED
+        error("ASDF.jl does not support streamed blocks")
+    end
 
     # TODO: Better error message
-    @assert allocated_size >= used_size
+    if allocated_size < used_size
+        error("ASDF file header incorrectly specifies amount of space to use")
+    end
 
     return BlockHeader(io, position, token, header_size, flags, compression, allocated_size, used_size, data_size, checksum)
 end
@@ -165,7 +172,9 @@ function read_block(header::BlockHeader)
     if any(header.checksum != 0)
         actual_checksum = md5(data)
         # TODO: Better error message
-        @assert all(actual_checksum == header.checksum)
+        if any(actual_checksum != header.checksum)
+            error("Checksum mismatch in ASDF file header")
+        end
     end
 
     # Decompress data
@@ -187,15 +196,16 @@ function read_block(header::BlockHeader)
         elseif compression == C_Zstd
             codec = ZstdCodec()
         else
-            # TODO: Better error message
-            @assert false
+            error("Invalid compression format found: $compression")
         end
         data = decode(codec, data)
     end
     data::AbstractVector{UInt8}
 
     # TODO: Better error message
-    @assert length(data) == header.data_size
+    if length(data) != header.data_size
+        error("Actual data size different from declared data size in header.")
+    end
 
     return data
 end
@@ -389,7 +399,9 @@ end
 function Base.getindex(ndarray::NDArray)
     if ndarray.data !== nothing
         data = ndarray.data
-        @assert ndarray.byteorder == host_byteorder
+        if ndarray.byteorder != host_byteorder
+            error("ndarray byteorder does not match system byteorder")
+        end
     elseif ndarray.source !== nothing
         data = read_block(ndarray.lazy_block_headers.block_headers[ndarray.source + 1])
         # Handle strides and offset.
