@@ -511,10 +511,27 @@ end
 
 ################################################################################
 
+# ASDF
 asdf_constructors = copy(YAML.default_yaml_constructors)
 asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = asdf_constructors["tag:yaml.org,2002:map"]
 asdf_constructors["tag:stsci.edu:asdf/core/software-1.0.0"] = asdf_constructors["tag:yaml.org,2002:map"]
 asdf_constructors["tag:stsci.edu:asdf/core/extension_metadata-1.0.0"] = asdf_constructors["tag:yaml.org,2002:map"]
+asdf_constructors["tag:stsci.edu:asdf/unit/unit-1.0.0"] = asdf_constructors["tag:yaml.org,2002:str"]
+
+# In load_file, pass multi_constructors as the second dict argument:
+multi_constructors = Dict{String, Function}()
+
+# ASDF transforms
+multi_constructors["tag:stsci.edu:asdf/transform/"] = (constructor, tag_suffix, node) ->
+    YAML.construct_mapping(constructor, node)
+
+# GWCS
+multi_constructors["tag:stsci.edu:gwcs/"] = (constructor, tag_suffix, node) ->
+    YAML.construct_mapping(constructor, node)
+
+# Astropy
+multi_constructors["tag:astropy.org:astropy/"] = (constructor, tag_suffix, node) ->
+    YAML.construct_mapping(constructor, node)
 
 function load_file(filename::AbstractString)
     io = open(filename, "r")
@@ -528,7 +545,7 @@ function load_file(filename::AbstractString)
     asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-chunk-1.0.0"] = construct_yaml_ndarray_chunk
     asdf_constructors′["tag:stsci.edu:asdf/core/chunked-ndarray-1.0.0"] = construct_yaml_chunked_ndarray
 
-    metadata = YAML.load(io, asdf_constructors′)
+    metadata = YAML.load(io, asdf_constructors′, multi_constructors)
     # lazy_block_headers.block_headers = find_all_blocks(io, position(io))
     lazy_block_headers.block_headers = find_all_blocks(io)
     return ASDFFile(filename, metadata, lazy_block_headers)
