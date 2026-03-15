@@ -516,24 +516,8 @@ asdf_constructors = copy(YAML.default_yaml_constructors)
 asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = asdf_constructors["tag:yaml.org,2002:map"]
 asdf_constructors["tag:stsci.edu:asdf/core/software-1.0.0"] = asdf_constructors["tag:yaml.org,2002:map"]
 asdf_constructors["tag:stsci.edu:asdf/core/extension_metadata-1.0.0"] = asdf_constructors["tag:yaml.org,2002:map"]
-asdf_constructors["tag:stsci.edu:asdf/unit/unit-1.0.0"] = asdf_constructors["tag:yaml.org,2002:str"]
 
-# In load_file, pass multi_constructors as the second dict argument:
-multi_constructors = Dict{String, Function}()
-
-# ASDF transforms
-multi_constructors["tag:stsci.edu:asdf/transform/"] = (constructor, tag_suffix, node) ->
-    YAML.construct_mapping(constructor, node)
-
-# GWCS
-multi_constructors["tag:stsci.edu:gwcs/"] = (constructor, tag_suffix, node) ->
-    YAML.construct_mapping(constructor, node)
-
-# Astropy
-multi_constructors["tag:astropy.org:astropy/"] = (constructor, tag_suffix, node) ->
-    YAML.construct_mapping(constructor, node)
-
-function load_file(filename::AbstractString)
+function load_file(filename::AbstractString; strict = true)
     io = open(filename, "r")
     lazy_block_headers = LazyBlockHeaders()
     construct_yaml_ndarray = make_construct_yaml_ndarray(lazy_block_headers)
@@ -542,12 +526,34 @@ function load_file(filename::AbstractString)
 
     asdf_constructors′ = copy(asdf_constructors)
     asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-1.0.0"] = construct_yaml_ndarray
+    asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-1.1.0"] = construct_yaml_ndarray
     asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-chunk-1.0.0"] = construct_yaml_ndarray_chunk
     asdf_constructors′["tag:stsci.edu:asdf/core/chunked-ndarray-1.0.0"] = construct_yaml_chunked_ndarray
 
+    # Fallback for unknown tags (e.g. Roman datamodel tags like asdf://stsci.edu/datamodels/roman/tags/...)
+    # YAML.jl dispatches prefix matches via multi_constructors, not more_constructors
+    multi_constructors = Dict{String,Function}()
+    if !strict
+        fallback = (constructor::YAML.Constructor, tag::String, node::YAML.Node) -> begin
+            if node isa YAML.MappingNode
+                YAML.construct_mapping(constructor, node)
+            elseif node isa YAML.SequenceNode
+                YAML.construct_sequence(constructor, node)
+            else
+                YAML.construct_scalar(constructor, node)
+            end
+        end
+        multi_constructors["tag:stsci.edu:asdf/time/"] = fallback
+        multi_constructors["tag:stsci.edu:asdf/transform/"] = fallback
+        multi_constructors["tag:stsci.edu:asdf/unit/"] = fallback
+        multi_constructors["tag:stsci.edu:gwcs/"] = fallback
+        multi_constructors["tag:astropy.org:astropy/"] = fallback
+        multi_constructors["asdf://stsci.edu/datamodels/"] = fallback
+    end
+
     metadata = YAML.load(io, asdf_constructors′, multi_constructors)
-    # lazy_block_headers.block_headers = find_all_blocks(io, position(io))
-    lazy_block_headers.block_headers = find_all_blocks(io)
+    lazy_block_headers.block_headers = find_all_blocks(io, position(io))
+    #lazy_block_headers.block_headers = find_all_blocks(io)
     return ASDFFile(filename, metadata, lazy_block_headers)
 end
 
