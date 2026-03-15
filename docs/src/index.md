@@ -5,6 +5,17 @@ A new [Advanced Scientific Data Format (ASDF)](https://asdf-standard.readthedocs
 
 ## Quickstart
 
+
+### Installation
+
+```julia-repl
+julia> ]
+
+pkg> add ASDF
+```
+
+### Usage
+
 ```julia
 using ASDF
 ```
@@ -15,7 +26,7 @@ af = ASDF.load_file("<file.asdf>")
 ```
 
 ```julia
-# Modify
+# Acess and modify
 af.metadata["<key>"] = <val>
 ```
 
