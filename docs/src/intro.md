@@ -82,12 +82,16 @@ af.metadata["meta"]["my"]["nested2"] = "metadata2"
 af.metadata
 ```
 
-## Tagged objects
-
-Supporting custom objects, extensions.
-
 ## Array storage
 
+By default, array data is written inline as a literal to the ASDF file. This can be stored and later accessed more efficiently by wrapping your data in an `ASDF.NDArrayWrapper`. This allows for your data to be stored as a binary via the `inline = false` keyword. This can be further optimized by specifying a supported compression algorithm to use via the `compression` keyword. In either case, `NDArrayWrapper` data allows for your data to be accessed as a strided view.
+
 ```julia
-ASDF.NDArrayWrapper(...; inline, compression)
+ASDF.NDArrayWrapper(...; compression = ASDF.C_Bzip2) # The default
 ```
+
+Access view `[]`
+
+## Tagged objects
+
+Comming soon. Supporting custom objects, extensions.
