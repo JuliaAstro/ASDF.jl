@@ -1,8 +1,3 @@
-# Generate documentation with this command:
-# (cd docs && julia make.jl)
-
-push!(LOAD_PATH, "..")
-
 using ASDF
 using Documenter
 using Documenter.Remotes: GitHub
@@ -13,9 +8,17 @@ makedocs(;
     repo = GitHub("JuliaAstro/ASDF.jl"),
     sitename = "ASDF.jl",
     format = Documenter.HTML(
-        prettyurls = true,
         canonical = "https://juliaastro.org/ASDF/stable/",
     ),
+    pages = [
+        "Home" => "index.md",
+        "Introduction" => "intro.md",
+        "Examples" => [
+            "JWST" => "examples/jwst.md",
+            "Roman" => "examples/roman.md",
+    ],
+        "API" => "api.md",
+    ],
 )
 
 deploydocs(;
