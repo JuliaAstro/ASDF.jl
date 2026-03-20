@@ -84,14 +84,26 @@ af.metadata
 
 ## Array storage
 
-By default, array data is written inline as a literal to the ASDF file. This can be stored and later accessed more efficiently by wrapping your data in an `ASDF.NDArrayWrapper`. This allows for your data to be stored as a binary via the `inline = false` keyword. This can be further optimized by specifying a supported compression algorithm to use via the `compression` keyword. In either case, `NDArrayWrapper` data allows for your data to be accessed as a strided view.
+By default, array data is written inline as a literal to the ASDF file. This can be stored and later accessed more efficiently by wrapping your data in an `ASDF.NDArrayWrapper`. This allows for your data to be stored as a binary via the `inline = false` keyword, which can be further optimized by specifying a supported [compression algorithm](@ref "Compression algorithms") to use via the `compression` keyword:
 
-```julia
-ASDF.NDArrayWrapper(...; compression = ASDF.C_Bzip2) # The default
+```@example intro
+af_payload = Dict{Any, Any}(
+    "meta" => Dict("my" => Dict("nested" => "metadata")),
+    # Default
+    "data" => ASDF.NDArrayWrapper([1, 2, 3, 4]; inline = false, compression = ASDF.C_Bzip2),
+)
+
+ASDF.write_file("../data/my_file_compressed.asdf", af_payload)
 ```
 
-Access view `[]`
+Saving your data as an `NDArrayWrapper` allows for it to be lazily accessed as a strided view. To access the underlying data, use the `[]` (dereference) syntax:
+
+```@example intro
+af = ASDF.load_file("../data/my_file_compressed.asdf")
+
+af.metadata["data"][]
+```
 
 ## Tagged objects
 
-Comming soon. Supporting custom objects, extensions.
+Coming soon. Supporting custom objects, extensions.

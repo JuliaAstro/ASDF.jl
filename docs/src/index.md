@@ -9,8 +9,6 @@ A new [Advanced Scientific Data Format (ASDF)](https://asdf-standard.readthedocs
 ### Installation
 
 ```julia-repl
-julia> ]
-
 pkg> add ASDF
 ```
 
