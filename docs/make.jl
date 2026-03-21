@@ -1,8 +1,3 @@
-# Generate documentation with this command:
-# (cd docs && julia make.jl)
-
-push!(LOAD_PATH, "..")
-
 using ASDF
 using Documenter
 using Documenter.Remotes: GitHub
