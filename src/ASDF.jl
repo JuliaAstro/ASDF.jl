@@ -51,6 +51,7 @@ struct BlockHeader
     used_size::UInt64
     data_size::UInt64
     checksum::AbstractVector{UInt8} # length 16
+    validate_checksum::Bool
 end
 
 mutable struct LazyBlockHeaders
@@ -109,7 +110,7 @@ native2big_U16(val::Integer) = native2big_U16(UInt16(val))
 native2big_U32(val::Integer) = native2big_U32(UInt32(val))
 native2big_U64(val::Integer) = native2big_U64(UInt64(val))
 
-function read_block_header(io::IO, position::Int64)
+function read_block_header(io::IO, position::Int64; validate_checksum::Bool)
     # Read block header
     max_header_size = 6 + 48
     header = Array{UInt8}(undef, max_header_size)
@@ -138,14 +139,14 @@ function read_block_header(io::IO, position::Int64)
     # TODO: Better error message
     @assert allocated_size >= used_size
 
-    return BlockHeader(io, position, token, header_size, flags, compression, allocated_size, used_size, data_size, checksum)
+    return BlockHeader(io, position, token, header_size, flags, compression, allocated_size, used_size, data_size, checksum, validate_checksum)
 end
 
-function find_all_blocks(io::IO, pos::Int64=Int64(0))
+function find_all_blocks(io::IO, pos::Int64=Int64(0); validate_checksum::Bool)
     headers = BlockHeader[]
     pos = find_next_block(io, pos)
     while pos !== nothing
-        header = read_block_header(io, pos)
+        header = read_block_header(io, pos; validate_checksum)
         push!(headers, header)
         pos = Int64(header.position + 6 + header.header_size + header.allocated_size)
         pos = find_next_block(io, pos)
@@ -162,7 +163,7 @@ function read_block(header::BlockHeader)
     @assert nb == length(data)
 
     # Check checksum
-    if any(header.checksum != 0)
+    if header.validate_checksum && any(!iszero, header.checksum)
         actual_checksum = md5(data)
         # TODO: Better error message
         @assert all(actual_checksum == header.checksum)
@@ -511,7 +512,7 @@ end
 
 ################################################################################
 
-function load_file(filename::AbstractString; extensions = false)
+function load_file(filename::AbstractString; extensions = false, validate_checksum = true)
     asdf_constructors = copy(YAML.default_yaml_constructors)
     asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = asdf_constructors["tag:yaml.org,2002:map"]
     asdf_constructors["tag:stsci.edu:asdf/core/software-1.0.0"] = asdf_constructors["tag:yaml.org,2002:map"]
@@ -544,7 +545,7 @@ function load_file(filename::AbstractString; extensions = false)
 
     metadata = YAML.load(io, asdf_constructors′)
     # lazy_block_headers.block_headers = find_all_blocks(io, position(io))
-    lazy_block_headers.block_headers = find_all_blocks(io)
+    lazy_block_headers.block_headers = find_all_blocks(io; validate_checksum)
     return ASDFFile(filename, metadata, lazy_block_headers)
 end
 
