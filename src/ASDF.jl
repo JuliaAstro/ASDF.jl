@@ -512,6 +512,8 @@ function YAML.write(file::ASDFFile)
     return "[ASDF file \"$(file.filename)\"]\n" * YAML.write(file.metadata)
 end
 
+Base.getindex(af::ASDFFile, key) = af.metadata[key]
+
 ################################################################################
 
 asdf_constructors = copy(YAML.default_yaml_constructors)
