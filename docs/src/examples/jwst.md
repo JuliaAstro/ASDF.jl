@@ -10,27 +10,35 @@ In this example, we show how to use ASDF.jl to load and view some astronomical d
 ## Load
 
 ```@example jwst
-using ASDF
 
-af = ASDF.load_file("../../data/jwst.asdf"; strict = false)
+fpath = joinpath("..", "..", "data", "jwst.asdf")
 
-af.metadata
+if !isfile(fpath)
+    @info "Downloading JWST data"
+    using Downloads: download
+
+    download("https://data.science.stsci.edu/redirect/Roman/Roman_Data_Workshop/ADASS2024/jwst.asdf", fpath)
+end
 ```
 
-## Modify
-
 ```@example jwst
-img_sci = let
-    img = af.metadata["data"][]
-    img[img .< 0] .= 1
-    img
-end
+using ASDF
+
+af = ASDF.load_file(fpath; extensions = true)
+
+af.metadata
 ```
 
 ## Plot
 
 ```@example jwst
 using CairoMakie
+
+img_sci = let
+    img = af.metadata["data"][]
+    img[img .< 0] .= 1
+    img
+end
 
 fig, ax, hm = heatmap(img_sci;
     colorrange = (1, 1e3),

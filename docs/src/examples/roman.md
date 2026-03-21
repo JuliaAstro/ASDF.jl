@@ -1,60 +1,54 @@
 # Roman
 
-*Adapted from [STScI Roman Notebooks](https://github.com/spacetelescope/roman_notebooks/blob/main/notebooks/data_visualization/data_visualization.ipynb).*
+*Adapted from [STScI Roman Notebooks](https://spacetelescope.github.io/roman_notebooks/notebooks/working_with_asdf/working_with_asdf.html).*
 
-```julia-repl
-julia> using ASDF, AWSS3, AWS
+In this example, we show how to use ASDF.jl to load and view some simulated astronomical data created in preparation for the future ([Nancy Grace Roman Space Telescope](https://science.nasa.gov/mission/roman-space-telescope/)) mission.
 
-julia> aws_config = AWS.AWSConfig(; creds = nothing, region = "us-east-1")
-AWSConfig(nothing, "us-east-1", "json", 3)
+!!! note "Data availability"
+    Simulated data products are currently provided by STScI via [AWS S3 buckets](https://spacetelescope.github.io/roman_notebooks/notebooks/data_discovery_and_access/data_discovery_and_access.html). Note: The data product used for this example is a moderately large file (~300 MB).
 
-# This is a large file, will take some time
-julia> s3_get_file(
-    aws_config,
-    "stpubdata",
-    "roman/nexus/soc_simulations/tutorial_data/r0003201001001001004_0001_wfi01_f106_cal.asdf",
-    "roman.asdf"
-)
+## Load
 
-julia> af = ASDF.load_file("roman.asdf"; strict = false);
+```@example roman
+fpath = joinpath("..", "..", "data", "roman.asdf")
 
-julia> af.metadata
-Dict{Any, Any} with 3 entries:
-  "history"      => Dict{Any, Any}("extensions"=>Dict{Any, Any}[Dict("software"=>Dict{Any, Any}("name"=>"asdf",…
-  "asdf_library" => Dict{Any, Any}("name"=>"asdf", "author"=>"The ASDF Developers", "homepage"=>"http://github.…
-  "roman"        => Dict{Any, Any}("dq_border_ref_pix_top"=>NDArray(LazyBlockHeaders(BlockHeader[BlockHeader(IO…
+if !isfile(fpath)
+    @info "Downloading Roman data"
+    using AWSS3, AWS
+    aws_config = AWS.AWSConfig(; creds = nothing, region = "us-east-1")
+    AWSConfig(nothing, "us-east-1", "json", 3)
 
-julia> af.metadata["roman"]
-Dict{Any, Any} with 16 entries:
-  "dq_border_ref_pix_top"    => NDArray(LazyBlockHeaders(BlockHeader[BlockHeader(IOStream(<file ../../data/roma…
-  "data"                     => NDArray(LazyBlockHeaders(BlockHeader[BlockHeader(IOStream(<file ../../data/roma…
-  "dq_border_ref_pix_bottom" => NDArray(LazyBlockHeaders(BlockHeader[BlockHeader(IOStream(<file ../../data/roma…
-  "amp33"                    => NDArray(LazyBlockHeaders(BlockHeader[BlockHeader(IOStream(<file ../../data/roma…
-  "border_ref_pix_top"       => NDArray(LazyBlockHeaders(BlockHeader[BlockHeader(IOStream(<file ../../data/roma…
-  "dq"                       => NDArray(LazyBlockHeaders(BlockHeader[BlockHeader(IOStream(<file ../../data/roma…
-  "dq_border_ref_pix_left"   => NDArray(LazyBlockHeaders(BlockHeader[BlockHeader(IOStream(<file ../../data/roma…
-  "var_rnoise"               => NDArray(LazyBlockHeaders(BlockHeader[BlockHeader(IOStream(<file ../../data/roma…
-  "border_ref_pix_bottom"    => NDArray(LazyBlockHeaders(BlockHeader[BlockHeader(IOStream(<file ../../data/roma…
-  "border_ref_pix_right"     => NDArray(LazyBlockHeaders(BlockHeader[BlockHeader(IOStream(<file ../../data/roma…
-  "var_poisson"              => NDArray(LazyBlockHeaders(BlockHeader[BlockHeader(IOStream(<file ../../data/roma…
-  "err"                      => NDArray(LazyBlockHeaders(BlockHeader[BlockHeader(IOStream(<file ../../data/roma…
-  "border_ref_pix_left"      => NDArray(LazyBlockHeaders(BlockHeader[BlockHeader(IOStream(<file ../../data/roma…
-  "meta"                     => Dict{Any, Any}("file_date"=>"2020-01-01T00:00:00.000", "cal_logs"=>["2025-05-28…
-  "dq_border_ref_pix_right"  => NDArray(LazyBlockHeaders(BlockHeader[BlockHeader(IOStream(<file ../../data/roma…
-  "var_flat"                 => NDArray(LazyBlockHeaders(BlockHeader[BlockHeader(IOStream(<file ../../data/roma…
+    # This is a large file, will take some time to download
+    julia> s3_get_file(
+        aws_config,
+        "stpubdata",
+        "roman/nexus/soc_simulations/tutorial_data/r0003201001001001004_0001_wfi01_f106_cal.asdf",
+        fpath
+    )
+end
 ```
 
-!!! todo
-    Fix checksum issue:
+```@example roman
+using ASDF
 
-    ```julia-repl
-    julia> af.metadata["roman"]["data"][]
-    ERROR: AssertionError: all(actual_checksum == header.checksum)
-    Stacktrace:
-     [1] read_block(header::ASDF.BlockHeader)
-       @ ASDF ~/projects/ASDF.jl/src/ASDF.jl:168
-     [2] getindex(ndarray::ASDF.NDArray)
-       @ ASDF ~/projects/ASDF.jl/src/ASDF.jl:394
-     [3] top-level scope
-       @ REPL[10]:1
-    ```
+af = ASDF.load_file(fpath; extensions = true, validate_checksum = false)
+
+af.metadata["roman"]
+```
+
+## Plot
+
+```@example roman
+using CairoMakie
+
+img = af.metadata["roman"]["data"][]
+
+let
+    fig, ax, hm = heatmap(img[begin:1000, begin:1000]; colorscale = asinh, colorrange = (0.5, 4))
+    Colorbar(fig[1, 2], hm)
+    fig
+end
+```
+
+!!! note
+    Some ASDF files produced by the Python implementation of ASDF may save a checksum in its header block computed from the original decompressed file. This will cause ASDF.jl to fail because in constrast, it computes the checksum based on the compressed (i.e., "used data"), as per the [current specification for ASDF](https://www.asdf-format.org/projects/asdf-standard/en/1.0.1/file_layout.html#block-header). To handle this potenial failure mode, we pass `validate_checksum = false` to avoid running the default checksum.
