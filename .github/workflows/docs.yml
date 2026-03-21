@@ -24,9 +24,9 @@ jobs:
         run: |
           julia --project=docs -e '
             using Pkg
-            Pkg.rm("ASDF")
             Pkg.add(url="https://github.com/JuliaAstro/ASDF.jl", rev="strict")
             Pkg.instantiate()
+            Pkg.resolve()
           '
       - name: Build and deploy
         uses: julia-actions/julia-docdeploy@v1
