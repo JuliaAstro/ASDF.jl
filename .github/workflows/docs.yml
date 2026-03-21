@@ -21,7 +21,13 @@ jobs:
           version: '1.12'
       - uses: julia-actions/cache@v3
       - name: Instantiate docs environment
-        run: julia --project=docs -e 'using Pkg; Pkg.instantiate()'
+        run: |
+          julia --project=docs -e '
+            using Pkg
+            Pkg.rm("ASDF")
+            Pkg.add(url="https://github.com/JuliaAstro/ASDF.jl", rev="strict")
+            Pkg.instantiate()
+          '
       - name: Build and deploy
         uses: julia-actions/julia-docdeploy@v1
         with:
