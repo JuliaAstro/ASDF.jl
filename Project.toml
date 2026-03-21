@@ -4,7 +4,7 @@ version = "2.0.0"
 authors = ["Erik Schnetter <schnetter@gmail.com>"]
 
 [workspace]
-projects = ["test", "docs"]
+projects = ["test"]
 
 [deps]
 ChunkCodecLibBlosc = "c6a955be-ab7f-4fbb-b38f-caf93db6b928"
