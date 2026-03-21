@@ -14,7 +14,6 @@ In this example, we show how to use ASDF.jl to load and view some astronomical d
 fpath = joinpath("..", "..", "data", "jwst.asdf")
 
 if !isfile(fpath)
-    @info "Downloading JWST data"
     using Downloads: download
 
     download("https://data.science.stsci.edu/redirect/Roman/Roman_Data_Workshop/ADASS2024/jwst.asdf", fpath)

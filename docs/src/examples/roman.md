@@ -13,13 +13,12 @@ In this example, we show how to use ASDF.jl to load and view some simulated astr
 fpath = joinpath("..", "..", "data", "roman.asdf")
 
 if !isfile(fpath)
-    @info "Downloading Roman data"
     using AWSS3, AWS
     aws_config = AWS.AWSConfig(; creds = nothing, region = "us-east-1")
     AWSConfig(nothing, "us-east-1", "json", 3)
 
     # This is a large file, will take some time to download
-    julia> s3_get_file(
+    s3_get_file(
         aws_config,
         "stpubdata",
         "roman/nexus/soc_simulations/tutorial_data/r0003201001001001004_0001_wfi01_f106_cal.asdf",
