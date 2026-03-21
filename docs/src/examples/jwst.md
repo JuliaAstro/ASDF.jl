@@ -11,7 +11,9 @@ In this example, we show how to use ASDF.jl to load and view some astronomical d
 
 ```@example jwst
 
-fpath = joinpath("..", "..", "data", "jwst.asdf")
+data_dir = joinpath("..", "..", "data")
+mkpath(data_dir)
+fpath = joinpath(data_dir, "jwst.asdf")
 
 if !isfile(fpath)
     using Downloads: download

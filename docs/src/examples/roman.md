@@ -10,7 +10,9 @@ In this example, we show how to use ASDF.jl to load and view some simulated astr
 ## Load
 
 ```@example roman
-fpath = joinpath("..", "..", "data", "roman.asdf")
+data_dir = joinpath("..", "..", "data")
+mkpath(data_dir)
+fpath = joinpath(data_dir, "roman.asdf")
 
 if !isfile(fpath)
     using AWSS3, AWS

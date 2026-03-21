@@ -24,7 +24,11 @@ Next, this dictionary can be written to the ASDF file format with `ASDF.write_fi
 ```@example intro
 using ASDF
 
-ASDF.write_file("../data/my_file.asdf", af_payload)
+data_dir = joinpath("..", "data")
+mkpath(data_dir)
+fpath = joinpath(data_dir, "my_file.asdf")
+
+ASDF.write_file(fpath, af_payload)
 ```
 
 which contains the following file contents:
@@ -61,7 +65,7 @@ asdf/library: !core/software-1.0.0
 This file can be loaded back with `ASDF.load_file`:
 
 ```@example intro
-af = ASDF.load_file("../data/my_file.asdf")
+af = ASDF.load_file(fpath)
 ```
 
 This creates an `ASDF.ASDFFile` object which contains a `meta` field. This is a new dictionary that merges information about this library (stored under the `asdf/library` key) with the original user-defined `af_payload` dictionary:
@@ -93,13 +97,14 @@ af_payload = Dict{Any, Any}(
     "data" => ASDF.NDArrayWrapper([1, 2, 3, 4]; inline = false, compression = ASDF.C_Bzip2),
 )
 
-ASDF.write_file("../data/my_file_compressed.asdf", af_payload)
+fpath = joinpath(data_dir, "my_file_compressed.asdf")
+ASDF.write_file(fpath, af_payload)
 ```
 
 Saving your data as an `NDArrayWrapper` allows for it to be lazily accessed as a strided view. To access the underlying data, use the `[]` (dereference) syntax:
 
 ```@example intro
-af = ASDF.load_file("../data/my_file_compressed.asdf")
+af = ASDF.load_file(fpath)
 
 af.metadata["data"][]
 ```

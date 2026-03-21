@@ -30,5 +30,6 @@ af.metadata["<key>"] = <val>
 
 ```julia
 # Write
-ASDF.write_file("<new_file.asdf>")
+doc = Dict(<data>)
+ASDF.write_file("<new_file.asdf>", doc)
 ```
