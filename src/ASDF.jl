@@ -611,7 +611,7 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bo
     YAML._print(io, ndarray, level, ignore_level)
 end
 
-function write_file(filename::AbstractString, document::Dict{Any,Any})
+function write_file(filename::AbstractString, document::Dict)
     # Set up block descriptors
     global blocks
     empty!(blocks)
