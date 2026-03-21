@@ -11,6 +11,7 @@ using PkgVersion: PkgVersion
 using StridedViews: StridedView
 using YAML: YAML
 using FileIO: @format_str, File, load, save
+using AbstractTrees: AbstractTrees
 
 export load, save
 
@@ -513,6 +514,11 @@ function YAML.write(file::ASDFFile)
 end
 
 Base.getindex(af::ASDFFile, key) = af.metadata[key]
+
+cs = AbstractTrees.TreeCharSet("├", "└", "│", "─", "", ": ")
+function Base.show(io::IO, ::MIME"text/plain", af::ASDFFile)
+    AbstractTrees.print_tree((io, x) -> print(io, typeof(x)), io, af.metadata; charset = cs)
+end
 
 ################################################################################
 
