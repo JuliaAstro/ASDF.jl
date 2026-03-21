@@ -511,11 +511,25 @@ end
 
 ################################################################################
 
-asdf_constructors = copy(YAML.default_yaml_constructors)
-asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = asdf_constructors["tag:yaml.org,2002:map"]
-asdf_constructors["tag:stsci.edu:asdf/core/software-1.0.0"] = asdf_constructors["tag:yaml.org,2002:map"]
+function load_file(filename::AbstractString; extensions = false)
+    asdf_constructors = copy(YAML.default_yaml_constructors)
+    asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = asdf_constructors["tag:yaml.org,2002:map"]
+    asdf_constructors["tag:stsci.edu:asdf/core/software-1.0.0"] = asdf_constructors["tag:yaml.org,2002:map"]
+    asdf_constructors["tag:stsci.edu:asdf/core/extension_metadata-1.0.0"] = asdf_constructors["tag:yaml.org,2002:map"]
 
-function load_file(filename::AbstractString)
+    if extensions
+        # Use fallbacks for now
+        asdf_constructors[nothing] = (constructor, node) -> begin
+            if node isa YAML.MappingNode
+                return YAML.construct_mapping(constructor, node)
+            elseif node isa YAML.SequenceNode
+                return YAML.construct_sequence(constructor, node)
+            else
+                return YAML.construct_scalar(constructor, node)
+            end
+        end
+    end
+
     io = open(filename, "r")
     lazy_block_headers = LazyBlockHeaders()
     construct_yaml_ndarray = make_construct_yaml_ndarray(lazy_block_headers)
@@ -524,6 +538,7 @@ function load_file(filename::AbstractString)
 
     asdf_constructors′ = copy(asdf_constructors)
     asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-1.0.0"] = construct_yaml_ndarray
+    asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-1.1.0"] = construct_yaml_ndarray
     asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-chunk-1.0.0"] = construct_yaml_ndarray_chunk
     asdf_constructors′["tag:stsci.edu:asdf/core/chunked-ndarray-1.0.0"] = construct_yaml_chunked_ndarray
 
