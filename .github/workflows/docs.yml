@@ -20,8 +20,17 @@ jobs:
         with:
           version: '1.12'
       - uses: julia-actions/cache@v3
+      - name: Instantiate feature branch (remove after merge)
+        run: |
+          julia --project=docs -e '
+            using Pkg
+            Pkg.add(url="https://github.com/JuliaAstro/ASDF.jl", rev="strict")
+            Pkg.instantiate()
+          '
       - name: Build and deploy
         uses: julia-actions/julia-docdeploy@v1
+        with:
+          install-package: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # If authenticating with GitHub Actions token
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }} # If authenticating with SSH deploy key
