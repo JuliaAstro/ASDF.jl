@@ -20,6 +20,8 @@ jobs:
         with:
           version: '1.12'
       - uses: julia-actions/cache@v3
+      - name: Instantiate docs environment
+        run: julia --project=docs -e 'using Pkg; Pkg.instantiate()'
       - name: Build and deploy
         uses: julia-actions/julia-docdeploy@v1
         with:
