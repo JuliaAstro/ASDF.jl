@@ -10,6 +10,9 @@ using MD5: md5
 using PkgVersion: PkgVersion
 using StridedViews: StridedView
 using YAML: YAML
+using FileIO: @format_str, File, load, save
+
+export load, save
 
 ################################################################################
 
@@ -533,6 +536,10 @@ function load_file(filename::AbstractString)
     return ASDFFile(filename, metadata, lazy_block_headers)
 end
 
+function fileio_load(f::File{format"ASDF"})
+    return load_file(f.filename)
+end
+
 ################################################################################
 ################################################################################
 ################################################################################
@@ -747,6 +754,10 @@ function write_file(filename::AbstractString, document::Dict{Any,Any})
 
     # Done.
     return nothing
+end
+
+function fileio_save(f::File{format"ASDF"}, data)
+    return write_file(f.filename, data)
 end
 
 end
