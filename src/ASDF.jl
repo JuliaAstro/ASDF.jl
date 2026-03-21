@@ -2,7 +2,7 @@ module ASDF
 
 using ChunkCodecLibBlosc: BloscCodec, BloscEncodeOptions
 using ChunkCodecLibBzip2: BZ2Codec, BZ2EncodeOptions
-using ChunkCodecLibLz4: LZ4FrameCodec, LZ4FrameEncodeOptions
+using ChunkCodecLibLz4: LZ4BlockCodec, LZ4FrameCodec, LZ4FrameEncodeOptions
 using ChunkCodecLibZlib: ZlibCodec, ZlibEncodeOptions
 using ChunkCodecLibZstd: ZstdCodec, ZstdEncodeOptions, decode, encode
 using CodecXz: XzCompressor, XzDecompressor
@@ -89,6 +89,8 @@ big2native_U8(bytes::AbstractVector{UInt8}) = bytes[1]
 big2native_U16(bytes::AbstractVector{UInt8}) = (UInt16(bytes[1]) << 8) | bytes[2]
 big2native_U32(bytes::AbstractVector{UInt8}) = (UInt32(big2native_U16(@view bytes[1:2])) << 16) | big2native_U16(@view bytes[3:4])
 big2native_U64(bytes::AbstractVector{UInt8}) = (UInt64(big2native_U32(@view bytes[1:4])) << 32) | big2native_U32(@view bytes[5:8])
+# Read a 4-byte little-endian UInt32 (used for lz4.block store_size prefix)
+little2native_U32(bytes::AbstractVector{UInt8}) = (UInt32(bytes[1])) | (UInt32(bytes[2]) << 8) | (UInt32(bytes[3]) << 16) | (UInt32(bytes[4]) << 24)
 
 native2big_U8(val::UInt8) = UInt8[val]
 native2big_U16(val::UInt16) = UInt8[(val >>> 0x08) & 0xff, (val >>> 0x00) & 0xff]
@@ -176,13 +178,13 @@ function read_block(header::BlockHeader)
         # do nothing, the block is uncompressed
     elseif compression == C_Xz
         data = transcode(XzDecompressor, data)
+    elseif compression == C_Lz4
+        data = decode_Lz4(data)
     else
         if compression == C_Blosc
             codec = BloscCodec()
         elseif compression == C_Bzip2
             codec = BZ2Codec()
-        elseif compression == C_Lz4
-            codec = LZ4FrameCodec()
         elseif compression == C_Zlib
             codec = ZlibCodec()
         elseif compression == C_Zstd
@@ -199,6 +201,46 @@ function read_block(header::BlockHeader)
     @assert length(data) == header.data_size
 
     return data
+end
+
+function decode_Lz4(data)
+    if (# LZ4 Frame magic bytes 04 22 4D 18
+        length(data) >= 4 &&
+        data[1] == 0x04 && data[2] == 0x22 &&
+        data[3] == 0x4D && data[4] == 0x18)
+        return decode(LZ4FrameCodec(), data)
+    else
+        # If the data was originally created from Python's ASDF, then it will be in block instead of frame layout,
+        # where each chunk is:
+        #
+        #   [4 bytes, big-endian]    compressed chunk size (the ASDF envelope)
+        #   [4 bytes, little-endian] uncompressed chunk size (lz4.block store_size=True prefix)
+        #   [N bytes]                raw LZ4 block payload
+        #
+        # lz4.block.compress() defaults to store_size=True, which prepends the
+        # uncompressed size as a little-endian uint32. LZ4BlockCodec expects only
+        # the raw block, so both the outer BE envelope and the inner LE prefix must
+        # be stripped, with the LE value used as the uncompressed_size hint.
+
+        out = UInt8[]
+        pos = 1
+
+        while pos <= length(data)
+            # Outer ASDF envelope: big-endian compressed chunk size
+            compressed_chunk_size = Int(big2native_U32(@view data[pos:pos+3]))
+            pos += 4
+            # Inner lz4.block store_size=True prefix: little-endian uncompressed size
+            uncompressed_chunk_size = Int(little2native_U32(@view data[pos:pos+3]))
+            pos += 4
+            # Raw LZ4 block payload (compressed_chunk_size includes the 4-byte LE prefix)
+            payload_len = compressed_chunk_size - 4
+            payload = @view data[pos:pos+payload_len-1]
+            pos += payload_len
+            append!(out, decode(LZ4BlockCodec(), payload; max_size = uncompressed_chunk_size, size_hint = uncompressed_chunk_size))
+        end
+
+        return out
+    end
 end
 
 ################################################################################
