@@ -22,6 +22,8 @@ jobs:
       - uses: julia-actions/cache@v3
       - name: Build and deploy
         uses: julia-actions/julia-docdeploy@v1
+        with:
+          devpackage: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # If authenticating with GitHub Actions token
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }} # If authenticating with SSH deploy key
