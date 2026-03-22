@@ -611,10 +611,10 @@ struct NDArrayWrapper
     array::AbstractArray
     compression::Compression
     inline::Bool
-    layout::Symbol
+    lz4_layout::Symbol
 end
-function NDArrayWrapper(array::AbstractArray; compression::Compression=C_Bzip2, inline::Bool=false, layout::Symbol=:default)
-    return NDArrayWrapper(array, compression, inline, layout)
+function NDArrayWrapper(array::AbstractArray; compression::Compression=C_Bzip2, inline::Bool=false, lz4_layout::Symbol=:block)
+    return NDArrayWrapper(array, compression, inline, lz4_layout)
 end
 Base.getindex(val::NDArrayWrapper) = val.array
 
@@ -765,7 +765,7 @@ function write_file(filename::AbstractString, document::Dict{Any,Any})
             # TODO: Don't copy input
             input = input isa Vector ? input : Vector(input)
             data = transcode(XzCompressor, input)
-        elseif array.compression == C_Lz4 && (array.layout == :default || array.layout == :block)
+        elseif array.compression == C_Lz4 && array.lz4_layout == :block
             data = encode_Lz4_block(input)
             #data = encode(LZ4BlockEncodeOptions(), input) # Not compatible with Python asdf
         else
@@ -773,7 +773,7 @@ function write_file(filename::AbstractString, document::Dict{Any,Any})
                 encode_options = BloscEncodeOptions(; clevel=9, doshuffle=2, typesize=sizeof(eltype(array.array)), compressor="zstd")
             elseif array.compression == C_Bzip2
                 encode_options = BZ2EncodeOptions(; blockSize100k=9)
-            elseif array.compression == C_Lz4 && array.layout == :frame
+            elseif array.compression == C_Lz4 && array.lz4_layout == :frame
                 encode_options = LZ4FrameEncodeOptions(; compressionLevel=12, blockSizeID=7)
             elseif array.compression == C_Zlib
                 encode_options = ZlibEncodeOptions(; level=9)
