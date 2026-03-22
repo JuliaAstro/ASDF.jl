@@ -2,7 +2,7 @@ module ASDF
 
 using ChunkCodecLibBlosc: BloscCodec, BloscEncodeOptions
 using ChunkCodecLibBzip2: BZ2Codec, BZ2EncodeOptions
-using ChunkCodecLibLz4: LZ4BlockCodec, LZ4FrameCodec, LZ4FrameEncodeOptions
+using ChunkCodecLibLz4: LZ4BlockCodec, LZ4FrameCodec, LZ4BlockEncodeOptions, LZ4FrameEncodeOptions
 using ChunkCodecLibZlib: ZlibCodec, ZlibEncodeOptions
 using ChunkCodecLibZstd: ZstdCodec, ZstdEncodeOptions, decode, encode
 using CodecXz: XzCompressor, XzDecompressor
@@ -611,9 +611,10 @@ struct NDArrayWrapper
     array::AbstractArray
     compression::Compression
     inline::Bool
+    layout::Symbol
 end
-function NDArrayWrapper(array::AbstractArray; compression::Compression=C_Bzip2, inline::Bool=false)
-    return NDArrayWrapper(array, compression, inline)
+function NDArrayWrapper(array::AbstractArray; compression::Compression=C_Bzip2, inline::Bool=false, layout::Symbol=:default)
+    return NDArrayWrapper(array, compression, inline, layout)
 end
 Base.getindex(val::NDArrayWrapper) = val.array
 
@@ -660,6 +661,40 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bo
     # println(io, YAML._indent("-\n", level), "!core/chunked-ndarray-1.0.0")
     println(io, "!core/ndarray-1.0.0")
     YAML._print(io, ndarray, level, ignore_level)
+end
+
+function encode_Lz4_block(input::AbstractVector{UInt8}; chunk_size::Int = 1024 * 1024 * 8)
+    out = UInt8[]
+    offset = 1
+    while offset <= length(input)
+        chunk_end = min(offset + chunk_size - 1, length(input))
+        chunk = @view input[offset:chunk_end]
+
+        # Compress the raw chunk with LZ4 block codec
+        # LZ4BlockEncodeOptions does NOT prepend the uncompressed size,
+        # so we must prepend the LE uint32 ourselves to match Python's
+        # lz4.block.compress(store_size=True) behaviour.
+        compressed_payload = encode(LZ4BlockEncodeOptions(), chunk)
+        uncompressed_size = UInt32(length(chunk))
+        compressed_chunk_size = UInt32(4 + length(compressed_payload))  # LE prefix + raw payload
+
+        # Outer ASDF envelope: big-endian compressed chunk size (includes the 4-byte LE prefix)
+        append!(out, native2big_U32(compressed_chunk_size))
+
+        # Inner lz4.block store_size=True prefix: little-endian uncompressed size
+        append!(out, [
+            (uncompressed_size >>> 0x00) & 0xff,
+            (uncompressed_size >>> 0x08) & 0xff,
+            (uncompressed_size >>> 0x10) & 0xff,
+            (uncompressed_size >>> 0x18) & 0xff,
+        ])
+
+        # Raw LZ4 block payload
+        append!(out, compressed_payload)
+        offset = chunk_end + 1
+    end
+
+    return out
 end
 
 function write_file(filename::AbstractString, document::Dict{Any,Any})
@@ -730,12 +765,15 @@ function write_file(filename::AbstractString, document::Dict{Any,Any})
             # TODO: Don't copy input
             input = input isa Vector ? input : Vector(input)
             data = transcode(XzCompressor, input)
+        elseif array.compression == C_Lz4 && (array.layout == :default || array.layout == :block)
+            data = encode_Lz4_block(input)
+            #data = encode(LZ4BlockEncodeOptions(), input) # Not compatible with Python asdf
         else
             if array.compression == C_Blosc
                 encode_options = BloscEncodeOptions(; clevel=9, doshuffle=2, typesize=sizeof(eltype(array.array)), compressor="zstd")
             elseif array.compression == C_Bzip2
                 encode_options = BZ2EncodeOptions(; blockSize100k=9)
-            elseif array.compression == C_Lz4
+            elseif array.compression == C_Lz4 && array.layout == :frame
                 encode_options = LZ4FrameEncodeOptions(; compressionLevel=12, blockSizeID=7)
             elseif array.compression == C_Zlib
                 encode_options = ZlibEncodeOptions(; level=9)

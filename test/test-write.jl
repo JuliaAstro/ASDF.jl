@@ -10,10 +10,11 @@
             "element1" => ASDF.NDArrayWrapper(array; compression=ASDF.C_None),
             "element2" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Blosc),
             "element3" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Bzip2),
-            "element4" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Lz4),
-            "element5" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Xz),
-            "element6" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Zlib),
-            "element7" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Zstd),
+            "element4" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Lz4, layout=:block),
+            "element5" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Lz4, layout=:frame),
+            "element6" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Xz),
+            "element7" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Zlib),
+            "element8" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Zstd),
         ),
     )
     ASDF.write_file(filename, doc)
@@ -33,7 +34,7 @@
     @test size(data2′) == size(data2)
     @test data2′ == data2
 
-    for n in 1:7
+    for n in 1:8
         element = doc["group"]["element$n"][]
         element′ = doc′.metadata["group"]["element$n"][]
         @test eltype(element′) == eltype(element)
