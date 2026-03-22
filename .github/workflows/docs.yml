@@ -29,7 +29,7 @@ jobs:
         run: |
           julia --project=docs -e '
             using Pkg
-            Pkg.add(path = "asdf-strict");
+            Pkg.develop(path = "asdf-strict");
             Pkg.instantiate()
           '
       - name: Build and deploy
