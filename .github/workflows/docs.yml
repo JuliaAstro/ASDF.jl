@@ -20,15 +20,12 @@ jobs:
         with:
           version: '1.12'
       - uses: julia-actions/cache@v3
-      - name: Clone strict branch (remove after merge)
-        run: git clone --branch strict https://github.com/JuliaAstro/ASDF.jl $RUNNER_TEMP/asdf-strict
-      - name: Instantiate feature branch (remove after merge)
+      - name: Copy strict branch src over usage branch's (remove after merge)
         run: |
-          julia --project=docs -e '
-            using Pkg
-            Pkg.develop(PackageSpec(path=ENV["RUNNER_TEMP"] * "/asdf-strict"))
-            Pkg.instantiate()
-          '
+          git clone --branch strict https://github.com/JuliaAstro/ASDF.jl $RUNNER_TEMP/asdf-strict
+          cp -r $RUNNER_TEMP/asdf-strict/src/* src/
+      - name: Instantiate docs environment
+        run: julia --project=docs -e 'using Pkg; Pkg.instantiate()'
       - name: Build and deploy
         uses: julia-actions/julia-docdeploy@v1
         with:
