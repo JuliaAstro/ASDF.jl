@@ -4,8 +4,7 @@ version = "2.0.0"
 authors = ["Erik Schnetter <schnetter@gmail.com>"]
 
 [workspace]
-# TODO: add "docs" after `strict` branch is merged
-projects = ["test"]
+projects = ["test", "docs"]
 
 [deps]
 ChunkCodecLibBlosc = "c6a955be-ab7f-4fbb-b38f-caf93db6b928"

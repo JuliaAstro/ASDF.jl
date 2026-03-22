@@ -20,8 +20,16 @@ jobs:
         with:
           version: '1.12'
       - uses: julia-actions/cache@v3
+      - name: Copy strict branch src over usage branch's (remove after merge)
+        run: |
+          git clone --branch strict https://github.com/JuliaAstro/ASDF.jl $RUNNER_TEMP/asdf-strict
+          cp -r $RUNNER_TEMP/asdf-strict/src/* src/
+      - name: Instantiate docs environment
+        run: julia --project=docs -e 'using Pkg; Pkg.instantiate()'
       - name: Build and deploy
         uses: julia-actions/julia-docdeploy@v1
+        with:
+          install-package: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # If authenticating with GitHub Actions token
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }} # If authenticating with SSH deploy key
