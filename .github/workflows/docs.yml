@@ -16,20 +16,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/checkout@v6 # Check out 'strict' branch alongside
-        with:
-          ref: strict
-          path: asdf-strict
-
       - uses: julia-actions/setup-julia@v2
         with:
           version: '1.12'
       - uses: julia-actions/cache@v3
+      - name: Clone strict branch (remove after merge)
+        run: git clone --branch strict https://github.com/JuliaAstro/ASDF.jl $RUNNER_TEMP/asdf-strict
       - name: Instantiate feature branch (remove after merge)
         run: |
           julia --project=docs -e '
             using Pkg
-            Pkg.develop(path = "asdf-strict");
+            Pkg.develop(path=ENV["RUNNER_TEMP"] * "/asdf-strict")
             Pkg.instantiate()
           '
       - name: Build and deploy
