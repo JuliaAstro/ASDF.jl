@@ -48,16 +48,53 @@ const compression_keys = Dict{Compression,Vector{UInt8}}(
     C_Zstd => Vector{UInt8}("zstd"),
 )
 @assert all(length(val)==4 for val in values(compression_keys))
+
 const compression_enums = Dict{Vector{UInt8},Compression}(
     value => key for (key, value) in compression_keys
 )
 
 ################################################################################
+"""
+    BlockHeader
 
+Parsed representation of a single ASDF binary block header.
+
+Every binary block in an ASDF file begins with a fixed-layout header that describes the block's compression, size, and integrity checksum. `BlockHeader` captures all decoded fields from that header, together with the `IO` handle and file position needed to subsequently read the block's data payload.
+
+# Fields
+
+| Field               | Description |
+| :------------------ | :---------- |
+| `io`                | The open file handle from which the block's data can be read. |
+| `position`          | Absolute byte offset of the block magic token within `io`. |
+| `token`             | 4-byte magic token. Always equal to [`block_magic_token`](@ref) (`\\323BLK`). |
+| `header_size`       | Size of the extended header region in bytes (excludes the 6-byte prefix). |
+| `flags`             | Block flags. Bit 0 (`0x1`) indicates a streamed block (not currently supported). |
+| `compression`       | 4-byte compression key (e.g. `"zstd"`, `"bzp2"`). |
+| `allocated_size`    | Number of bytes allocated in the file for this block's data (≥ `used_size`). |
+| `used_size`         | Number of bytes of (compressed) data actually written. |
+| `data_size`         | Number of bytes of the *uncompressed* data. |
+| `checksum`          | 16-byte MD5 digest of the compressed data, or all zeros if omitted. |
+| `validate_checksum` | When `true`, [`ASDF.read_block`](@ref) verifies the MD5 digest before returning data. |
+
+# File layout
+
+The block occupies the following byte range within `io`, starting at `position`:
+
+|                                |                      | |
+| :--                            | :--                  | :-- |
+| `[position]`                   | 4 bytes              | magic token |
+| `[position + 4]`               | 2 bytes              | header_size  (big-endian UInt16) |
+| `[position + 6]`               | header_size bytes    |      extended header fields |
+| `[position + 6 + header_size]` | allocated_size bytes |  data payload |
+
+The extended header (always 48 bytes in the current implementation) contains, in order: `flags` (4 B), `compression` (4 B), `allocated_size` (8 B), `used_size` (8 B), `data_size` (8 B), and `checksum` (16 B).
+
+All multi-byte integers in the header are stored in **big-endian** byte order.
+"""
 struct BlockHeader
     io::IO
     position::Int64
-
     token::AbstractVector{UInt8} # length 4
     header_size::UInt16
     flags::UInt32
@@ -74,6 +111,11 @@ mutable struct LazyBlockHeaders
     LazyBlockHeaders() = new(BlockHeader[])
 end
 
+"""
+    block_magic_token
+
+The 4-byte sentinel `UInt8[0xd3, 0x42, 0x4c, 0x4b]`.
+"""
 const block_magic_token = UInt8[0xd3, 0x42, 0x4c, 0x4b] # "\323BLK"
 
 find_first_block(io::IO) = find_next_block(io, Int64(0))
@@ -127,6 +169,11 @@ native2big_U16(val::Integer) = native2big_U16(UInt16(val))
 native2big_U32(val::Integer) = native2big_U32(UInt32(val))
 native2big_U64(val::Integer) = native2big_U64(UInt64(val))
 
+"""
+    read_block_header(io::IO, position::Int64; validate_checksum::Bool)
+
+Constructs an [`ASDF.BlockHeader`](@ref) by parsing the file at a given offset.
+"""
 function read_block_header(io::IO, position::Int64; validate_checksum::Bool)
     # Read block header
     max_header_size = 6 + 48
@@ -159,6 +206,11 @@ function read_block_header(io::IO, position::Int64; validate_checksum::Bool)
     return BlockHeader(io, position, token, header_size, flags, compression, allocated_size, used_size, data_size, checksum, validate_checksum)
 end
 
+"""
+    find_all_blocks(io::IO, pos::Int64=Int64(0); validate_checksum::Bool)
+
+Scans an `IO` stream and returns all [`ASDF.BlockHeader`](@ref) values found.
+"""
 function find_all_blocks(io::IO, pos::Int64=Int64(0); validate_checksum::Bool)
     headers = BlockHeader[]
     pos = find_next_block(io, pos)
@@ -171,6 +223,11 @@ function find_all_blocks(io::IO, pos::Int64=Int64(0); validate_checksum::Bool)
     return headers
 end
 
+"""
+    read_block(header::BlockHeader)
+
+Uses an [`ASDF.BlockHeader`](@ref) to read, verify, and decompress the data payload.
+"""
 function read_block(header::BlockHeader)
     block_data_start = header.position + 6 + header.header_size
     seek(header.io, block_data_start)
@@ -311,7 +368,7 @@ const host_byteorder = reinterpret(UInt8, UInt16[1])[1] == 1 ? Byteorder_little 
 ################################################################################
 
 """
-Maps ASDF datatype strings to Julia types. Note this is unrelated to `Base.DataType`. Defined mapping:
+Maps ASDF datatype strings to Julia types. Note this is unrelated to `Base.DataType`. Defined mappings:
 
 | ASDF string             | Julia type              |
 | :---------------------- | :---------------------- |
@@ -395,19 +452,25 @@ Datatype(type::Type) = type_datatype_dict[type]
 """
     NDArray
 
-A dense N-dimensional array, either backed lazily by a file block (`source`) or by an in-memory array (`data`). Exactly one of `source` and `data` is non-nothing. The array can be stored inline or in an ASDF binary block.
+A lazily-materialized N-dimensional array stored in an ASDF file, either as a binary block or inline within the ASDF file.
 
-- `source` -- zero-based index into the file's block list (mutually exclusive with `data`).
-- `data` -- in-memory array (mutually exclusive with `source`).
-- `shape` -- dimensions in Python/C order (outermost first). The Julia array has dimensions `reverse(shape)`.
-- `strides` -- byte strides in Python/C order.
-- `offset` -- byte offset into the block.
+`NDArray` is the in-memory representation of an `!core/ndarray-1.0.0` YAML node. It holds the array's shape, type, and layout metadata, but defers reading and decompressing block data until the array is explicitly materialized by calling [`Base.getindex(ndarray::NDArray)`](@ref).
 
-The Julia array shape is `reverse(shape)` (column-major). Strides are always stored in row-major order to match the ASDF/Python convention.
+# Fields
+
+| Field                 | Description |
+| :-------------------- | :---------- |
+| `lazy_block_headers`  | Reference to the file's block header list. Used to resolve `source` indices at materialization time. |
+| `source`              | Zero-based index of the backing binary block, or `nothing` for inline arrays. |
+| `data`                | In-memory array for inline data, or `nothing` for block-backed arrays. |
+| `shape`               | Array dimensions in **Python/C (row-major) order** — outermost dimension first. The equivalent Julia shape is `reverse(shape)`. |
+| `datatype`            | Element type, as an [`ASDF.Datatype`](@ref) enum value. Convert to a Julia type with `Type(datatype)`. |
+| `byteorder`           | Byte order of the stored data (`Byteorder_little` or `Byteorder_big`). |
+| `offset`              | Byte offset from the start of the block to the first array element. Non-negative. |
+| `strides`             | Byte strides in **Python/C (row-major) order**. Must all be positive and `length(strides) == length(shape)`. |
 """
 struct NDArray
     lazy_block_headers::LazyBlockHeaders
-
     source::Union{Nothing,Int64,AbstractString}
     data::Union{Nothing,AbstractArray}
     shape::Vector{Int64}
@@ -545,7 +608,14 @@ end
 """
     NDArrayChunk
 
-A positioned tile within an [`ASDF.ChunkedNDArray`](@ref). `start` gives the zero-based origin of this chunk in the coordinate space of the parent array (Python/C order).
+A positioned tile within an [`ASDF.ChunkedNDArray`](@ref), pairing an [`ASDF.NDArray`](@ref) with a zero-based origin that locates the tile in the parent array's coordinate space.
+
+# Fields
+
+| Field     | Description |
+| :-------- | :---------- |
+| `start`   | Zero-based origin of the tile in **Python/C (row-major) order**, outermost dimension first. All elements must be non-negative. `length(start)` must equal `length(ndarray.strides)`. |
+| `ndarray` | The tile data, including its own shape, datatype, byte order, and backing block reference. |
 """
 struct NDArrayChunk
     start::Vector{Int64}
@@ -575,7 +645,17 @@ end
 """
     ChunkedNDArray
 
-An array composed of arbitrarily-positioned tiles. Gaps between chunks are left uninitialised. Overlapping chunks are written in order.
+A logical N-dimensional array assembled from a collection of arbitrarily-positioned [`ASDF.NDArrayChunk`](@ref) tiles, each backed by its own binary block or inline data.
+
+`ChunkedNDArray` is the in-memory representation of a `!core/chunked-ndarray-1.X.Y` YAML node. It defines the shape and element type of the full logical array, but defers all data access to the individual chunks. The full array is only allocated and populated when [`Base.getindex(ndarray::NDArray)`](@ref) is called.
+
+# Fields
+
+| Field      | Description |
+| :--------- | :---------- |
+| `shape`    | Dimensions of the full logical array in **Python/C (row-major) order**, outermost dimension first. All elements must be non-negative. The equivalent Julia shape is `reverse(shape)`. |
+| `datatype` | Element type shared by all chunks. Convert to a Julia type with `Type(datatype)`. |
+| `chunks`   | Ordered collection of tiles that together populate the logical array. Tiles are written in iteration order when materializing. Later tiles overwrite earlier ones in any overlapping region. |
 """
 struct ChunkedNDArray
     shape::Vector{Int64}
@@ -717,7 +797,7 @@ end
 """
     ASDFLibrary
 
-Software provenance metadata, serialised as a `!core/software-1.0.0 YAML` tag. [`ASDF.write_file`] inserts an entry automatically under the key `"asdf/library"` if one is not already present, using the package's own name, author, homepage, and version.
+Software provenance metadata, serialized as a `!core/software-1.0.0 YAML` tag. [`ASDF.write_file`] inserts an entry automatically under the key `"asdf/library"` if one is not already present, using the package's own name, author, homepage, and version.
 """
 struct ASDFLibrary
     name::AbstractString
@@ -838,7 +918,7 @@ end
 """
     write_file(filename::AbstractString, document::Dict{Any,Any})
 
-Writes an ASDF file to disk. `document` is a plain `Dict` whose values may include [`NDArrayWrapper`](@ref) instances. These are serialised as binary blocks with appropriate compression.
+Writes an ASDF file to disk. `document` is a plain `Dict` whose values may include [`NDArrayWrapper`](@ref) instances. These are serialized as binary blocks with appropriate compression.
 
 Layout of the output file:
 
