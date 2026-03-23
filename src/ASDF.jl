@@ -522,7 +522,7 @@ end
 
 AbstractTrees.children(n::ASDFTreeNode) =
     n.value isa ASDFFile ? [ASDFTreeNode(k, v) for (k, v) in n.value.metadata] :
-    n.value isa Dict     ? [ASDFTreeNode(k, v) for (k, v) in sort(n.value)] : ()
+    n.value isa Dict     ? [ASDFTreeNode(k, v) for (k, v) in sort(collect(n.value); by = first)] : ()
 
 AbstractTrees.printnode(io::IO, n::ASDFTreeNode) =
     n.key === nothing            ? print(io, n.value.filename)                                         :
