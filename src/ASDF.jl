@@ -516,19 +516,20 @@ end
 Base.getindex(af::ASDFFile, key) = af.metadata[key]
 
 struct ASDFTreeNode
-    key::Union{String, Nothing}
+    key::Union{Any, Nothing}
     value::Any
 end
 
 AbstractTrees.children(n::ASDFTreeNode) =
     n.value isa ASDFFile ? [ASDFTreeNode(k, v) for (k, v) in n.value.metadata] :
-    n.value isa Dict     ? [ASDFTreeNode(k, v) for (k, v) in n.value] : ()
+    n.value isa Dict     ? [ASDFTreeNode(k, v) for (k, v) in sort(n.value)] : ()
 
 AbstractTrees.printnode(io::IO, n::ASDFTreeNode) =
-    n.key === nothing    ? print(io, n.value.filename) :
-    n.value isa Dict     ? print(io, n.key, "::Dict") :
-    n.value isa NDArray  ? print(io, "$(n.key): NDArray{$(n.value.datatype), shape=$(n.value.shape)}") :
-    print(io, n.key, ": ", repr(n.value))
+    n.key === nothing            ? print(io, n.value.filename)                                         :
+    n.value isa Dict             ? print(io, n.key, "::",  typeof(n.key))                              :
+    n.value isa NDArray          ? print(io, n.key, "::",  typeof(n.value), " | shape = ", n.value.shape) :
+    n.value isa AbstractVector   ? print(io, n.key, "::" , typeof(n.value), " | shape = ", size(n.value)) :
+                                   print(io, n.key, "::",  typeof(n.value), " | ", n.value)
 
 function Base.show(io::IO, ::MIME"text/plain", af::ASDFFile)
     AbstractTrees.print_tree(io, ASDFTreeNode(nothing, af))
