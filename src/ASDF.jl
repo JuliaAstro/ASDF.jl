@@ -275,7 +275,7 @@ const string_byteorder_dict = Dict{String,Byteorder}(val => key for (key, val) i
 """
     ASDF.Byteorder(str::AbstractString)::Byteorder
 
-Convenience conversion for [ASDF.Byteorder](@ref). Inverse of [`Base.string(byteorder::Byteorder)`](@ref).
+Convenience conversion for [`ASDF.Byteorder`](@ref). Inverse of [`Base.string(byteorder::Byteorder)`](@ref).
 
 # Examples
 
@@ -289,7 +289,7 @@ Byteorder(str::AbstractString) = string_byteorder_dict[str]
 """
     string(byteorder::Byteorder)::AbstractString
 
-Convenience conversion for [ASDF.Byteorder](@ref). Inverse of [`ASDF.Byteorder(str::AbstractString)`](@ref).
+Convenience conversion for [`ASDF.Byteorder`](@ref). Inverse of [`ASDF.Byteorder(str::AbstractString)`](@ref).
 
 # Examples
 
@@ -545,7 +545,7 @@ end
 """
     NDArrayChunk
 
-A positioned tile within an [ASDF.ChunkedNDArray](@ref). `start` gives the zero-based origin of this chunk in the coordinate space of the parent array (Python/C order).
+A positioned tile within an [`ASDF.ChunkedNDArray`](@ref). `start` gives the zero-based origin of this chunk in the coordinate space of the parent array (Python/C order).
 """
 struct NDArrayChunk
     start::Vector{Int64}
@@ -634,6 +634,13 @@ end
 
 ################################################################################
 
+"""
+    ASDFFile
+
+An open ASDF file. `metadata` is the parsed YAML tree. Any [`ASDF.NDArray`](@ref) or [`ASDF.ChunkedNDArray`](@ref) nodes appear as values and are lazily backed by lazy_block_headers.
+
+`YAML.write(file::ASDFFile)` returns a human-readable summary string.
+"""
 struct ASDFFile
     filename::AbstractString
     metadata::Dict{Any,Any}
@@ -646,6 +653,26 @@ end
 
 ################################################################################
 
+"""
+    load_file(filename::AbstractString; extensions = false, validate_checksum = true)
+
+Reads an ASDF file from disk.
+
+| Parameter           | Description                                                                                                      |
+| :------------------ | :--------------------------------------------------------------------------------------------------------------- |
+| `filename`          | Path to the `.asdf` file                                                                                         |
+| `extensions`        | When `true`, unknown YAML tags are parsed leniently (as maps, sequences, or scalars) instead of raising an error |
+| `validate_checksum` | When `true`, each block's MD5 checksum is verified against the stored value                                      |
+
+Block data is located lazily. Block headers are scanned after the YAML is parsed, and array data (`ndarray`) is read only when [`Base.getindex(ndarray::NDArray)`](@ref) is called, i.e., `ndarray[]`.
+
+Supported YAML tags:
+
+- `tag:stsci.edu:asdf/core/ndarray-1.0.0`
+- `tag:stsci.edu:asdf/core/ndarray-1.1.0`
+- `tag:stsci.edu:asdf/core/ndarray-chunk-1.0.0`
+- `tag:stsci.edu:asdf/core/chunked-ndarray-1.0.0`
+"""
 function load_file(filename::AbstractString; extensions = false, validate_checksum = true)
     asdf_constructors = copy(YAML.default_yaml_constructors)
     asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = asdf_constructors["tag:yaml.org,2002:map"]
@@ -687,6 +714,11 @@ end
 ################################################################################
 ################################################################################
 
+"""
+    ASDFLibrary
+
+Software provenance metadata, serialised as a `!core/software-1.0.0 YAML` tag. [`ASDF.write_file`] inserts an entry automatically under the key `"asdf/library"` if one is not already present, using the package's own name, author, homepage, and version.
+"""
 struct ASDFLibrary
     name::AbstractString
     author::AbstractString
@@ -699,6 +731,20 @@ function YAML._print(io::IO, val::ASDFLibrary, level::Int=0, ignore_level::Bool=
     YAML._print(io, library, level, ignore_level)
 end
 
+"""
+    NDArrayWrapper
+
+A write-side wrapper around a Julia array that carries compression and layout options. Used as the value type when building a document dict for [`ASDF.write_file`](@ref).
+
+Parameter     | Default   | Description                                                               |
+| :---------- | :-------- | :------------------------------------------------------------------------ |
+`compression` | `C_Bzip2` | Applied compression scheme                                                |
+`inline`      | `false`   | Embed data in YAML instead of a binary block                              |
+`lz4_layout`  | `:block`  | `:block` for Python-compatible chunked LZ4, `:frame` for LZ4 frame format |
+
+!!! note
+    If the compressed output is larger than the raw input, the block is stored uncompressed regardless of the chosen compression.
+"""
 struct NDArrayWrapper
     array::AbstractArray
     compression::Compression
@@ -789,6 +835,18 @@ function encode_Lz4_block(input::AbstractVector{UInt8}; chunk_size::Int = 1024 *
     return out
 end
 
+"""
+    write_file(filename::AbstractString, document::Dict{Any,Any})
+
+Writes an ASDF file to disk. `document` is a plain `Dict` whose values may include [`NDArrayWrapper`](@ref) instances. These are serialised as binary blocks with appropriate compression.
+
+Layout of the output file:
+
+1. ASDF/YAML header (`#ASDF 1.0.0, #ASDF_STANDARD 1.2.0, %YAML 1.1`)
+1. YAML tree (`!core/asdf-1.1.0`)
+1. Binary blocks — one per [`NDArrayWrapper`](@ref) that has `inline == false`
+1. Block index (`#ASDF BLOCK INDEX`)
+"""
 function write_file(filename::AbstractString, document::Dict{Any,Any})
     # Set up block descriptors
     global blocks
