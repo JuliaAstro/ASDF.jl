@@ -2,7 +2,7 @@ using ASDF
 using Documenter
 using Documenter.Remotes: GitHub
 
-DocMeta.setdocmeta!(ASDF, :DocTestSetup, setup; recursive = true)
+DocMeta.setdocmeta!(ASDF, :DocTestSetup, :(using ASDF); recursive = true)
 
 makedocs(;
     modules = [ASDF],
