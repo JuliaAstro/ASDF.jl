@@ -106,6 +106,27 @@ struct BlockHeader
     validate_checksum::Bool
 end
 
+"""
+    LazyBlockHeaders
+
+A mutable container holding the complete list of [`ASDF.BlockHeader`](@ref) values scanned from an ASDF file, shared by reference with every [`ASDF.NDArray`](@ref)
+and [`ASDF.ChunkedNDArray`](@ref) constructed during parsing.
+
+# Reference sharing
+
+Every [`ASDF.NDArray`](@ref) created during parsing of a given file holds a reference to the same `LazyBlockHeaders` instance. When `ndarray[]` is called, it indexes into `lazy_block_headers.block_headers` using the array's zero-based `source` field:
+
+```julia
+header = ndarray.lazy_block_headers.block_headers[ndarray.source + 1]
+data   = ASDF.read_block(header)
+```
+
+Because `block_headers` is populated after all `NDArray` objects are constructed, no array needs to be updated individually when block scanning completes. The shared mutable reference propagates the result automatically.
+
+# Mutability
+
+`LazyBlockHeaders` is a `mutable struct` solely to allow `block_headers` to be assigned after construction. The field is written exactly once per file load, immediately after `YAML.load` within [`ASDF.load_file`](@ref) returns. It is never modified again during normal use. Treat it as effectively immutable after [`load_file`](@ref) returns.
+"""
 mutable struct LazyBlockHeaders
     block_headers::Vector{BlockHeader}
     LazyBlockHeaders() = new(BlockHeader[])
@@ -717,9 +738,15 @@ end
 """
     ASDFFile
 
-An open ASDF file. `metadata` is the parsed YAML tree. Any [`ASDF.NDArray`](@ref) or [`ASDF.ChunkedNDArray`](@ref) nodes appear as values and are lazily backed by lazy_block_headers.
+The in-memory representation of a loaded ASDF file, combining the parsed YAML metadata tree with the binary block infrastructure needed to lazily materialize any array data it references.
 
-`YAML.write(file::ASDFFile)` returns a human-readable summary string.
+# Fields
+
+| Field                 | Description |
+| :-------------------- | :---------- |
+| `filename`            | Path of the file on disk, as passed to [`ASDF.load_file`](@ref). Used for display and diagnostics only. The file is not kept open after loading. |
+| `metadata`            | The fully parsed YAML tree. Keys are strings matching the top-level YAML keys. Values may be any Julia type produced by the YAML constructors, including [`ASDF.NDArray`](@ref), [`ASDF.ChunkedNDArray`](@ref), nested `Dict`s, `Vector`s, and scalars. |
+| `lazy_block_headers`  | All binary block headers found in the file, scanned once at load time. Shared by reference with every [`ASDF.NDArray`](@ref) in `metadata`, allowing them to locate and read their backing blocks on demand. |
 """
 struct ASDFFile
     filename::AbstractString
@@ -746,12 +773,8 @@ Reads an ASDF file from disk.
 
 Block data is located lazily. Block headers are scanned after the YAML is parsed, and array data (`ndarray`) is read only when [`Base.getindex(ndarray::NDArray)`](@ref) is called, i.e., `ndarray[]`.
 
-Supported YAML tags:
-
-- `tag:stsci.edu:asdf/core/ndarray-1.0.0`
-- `tag:stsci.edu:asdf/core/ndarray-1.1.0`
-- `tag:stsci.edu:asdf/core/ndarray-chunk-1.0.0`
-- `tag:stsci.edu:asdf/core/chunked-ndarray-1.0.0`
+!!! note "File handle lifetime"
+    The file handle opened by `load_file` is retained for the lifetime of the returned [`ASDF.ASDFFile`](@ref) so that block data can be read on demand. Do not move, truncate, or overwrite the source file while any [`ASDF.NDArray`](@ref) from it may still be accessed.
 """
 function load_file(filename::AbstractString; extensions = false, validate_checksum = true)
     asdf_constructors = copy(YAML.default_yaml_constructors)
@@ -836,6 +859,24 @@ function NDArrayWrapper(array::AbstractArray; compression::Compression=C_Bzip2, 
 end
 Base.getindex(val::NDArrayWrapper) = val.array
 
+"""
+    Blocks
+
+Module-level accumulator that collects [`ASDF.NDArrayWrapper`](@ref) values and their corresponding file positions during a single call to [`ASDF.write_file`](@ref).
+
+`Blocks` acts as a two-phase write buffer. In the first phase, as the YAML tree is serialized, each non-inline [`ASDF.NDArrayWrapper`](@ref) appends itself to `arrays` and reserves a sequential source index. In the second phase, [`ASDF.write_file`](@ref) iterates over `arrays`, compresses and writes each block to disk, and records the resulting file offsets in `positions`. The finalized `positions` vector is then written as the ASDF block index at the end of the file.
+
+!!! warning "Not thread-safe"
+    A single instance of `Blocks` is held in the module-level constant `ASDF.blocks`. Because this global state is mutated by [`ASDF.write_file`](@ref), concurrent calls to `write_file` from multiple threads will corrupt each other's block lists. Do not call `write_file` concurrently.
+
+# Fields
+
+| Field        | Description |
+| :----------  | :---------- |
+| `arrays`     | Ordered list of arrays to be written as binary blocks, accumulated during YAML serialisation. The position of each wrapper in this vector is its zero-based block source index. |
+| `positions`  | Absolute byte offsets of each written block within the output file, populated during the block-writing phase of [`ASDF.write_file`](@ref). `positions[i]` corresponds to `arrays[i]`. |
+
+"""
 struct Blocks
     arrays::Vector{NDArrayWrapper}
     positions::Vector{Int64}
