@@ -515,9 +515,23 @@ end
 
 Base.getindex(af::ASDFFile, key) = af.metadata[key]
 
-cs = AbstractTrees.TreeCharSet("├", "└", "│", "─", "", ": ")
+struct ASDFTreeNode
+    key::Union{String, Nothing}
+    value::Any
+end
+
+AbstractTrees.children(n::ASDFTreeNode) =
+    n.value isa ASDFFile ? [ASDFTreeNode(k, v) for (k, v) in n.value.metadata] :
+    n.value isa Dict     ? [ASDFTreeNode(k, v) for (k, v) in n.value] : ()
+
+AbstractTrees.printnode(io::IO, n::ASDFTreeNode) =
+    n.key === nothing    ? print(io, n.value.filename) :
+    n.value isa Dict     ? print(io, n.key, "::Dict") :
+    n.value isa NDArray  ? print(io, "$(n.key): NDArray{$(n.value.datatype), shape=$(n.value.shape)}") :
+    print(io, n.key, ": ", repr(n.value))
+
 function Base.show(io::IO, ::MIME"text/plain", af::ASDFFile)
-    AbstractTrees.print_tree((io, x) -> print(io, typeof(x)), io, af.metadata; charset = cs)
+    AbstractTrees.print_tree(io, ASDFTreeNode(nothing, af))
 end
 
 ################################################################################
