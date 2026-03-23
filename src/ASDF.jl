@@ -20,6 +20,21 @@ const software_version = string(PkgVersion.@Version)
 
 ################################################################################
 
+"""
+Identifies the compression algorithm used for a data block. Available variants:
+
+| Scheme           | 4-byte key     | Backend                | Description                                                   |
+| :--------------- | :------------- | :--------------------- | :------------------------------------------------------------ |
+| `C_None`         | `\\0\\0\\0\\0` | --                     |  Fast I/O speed, no CPU overhead                              |
+| `C_Blosc`        | `blsc`         | ChunkCodecLibBlosc.jl  | Multi-threaded, shuffle-aware, best with typed numeric arrays |
+| `C_Blosc2`       | `bls2`         | See [Issue #49](https://github.com/JuliaIO/ChunkCodecs.jl/issues/49) | Like Blosc but supports more than 2 GB of data                |
+| `C_Bzip2`        | `bzp2`         | ChunkCodecLibBzip2.jl  | Good ratio, moderate speed (default)                          |
+| `C_Lz4` (:block) | `lz4\\0`       | ChunkCodecLibLz4.jl    | Fastest decompression, Python-compatible                      |
+| `C_Lz4` (:frame) | `lz4\\0`       | ChunkCodecLibLz4.jl    | LZ4 frame format for non-Python consumers                     |
+| `C_Xz`           | `xz\\0\\0`     | CodecXz.jl             | Highest compression ratio, slowest                            |
+| `C_Zlib`         | `zlib`         | ChunkCodecLibZlib.jl   | Broad compatibility                                           |
+| `C_Zstd`         | `zstd`         | ChunkCodecLibZstd.jl   | Best ratio/speed trade-off                                    |
+"""
 @enum Compression C_None C_Blosc C_Blosc2 C_Bzip2 C_Lz4 C_Xz C_Zlib C_Zstd
 
 const compression_keys = Dict{Compression,Vector{UInt8}}(

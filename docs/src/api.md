@@ -6,4 +6,3 @@
 ```@autodocs
 Modules = [ASDF]
 ```
-### Compression algorithms

@@ -88,7 +88,7 @@ af.metadata
 
 ## Array storage
 
-By default, array data is written inline as a literal to the ASDF file. This can be stored and later accessed more efficiently by wrapping your data in an `ASDF.NDArrayWrapper`. This allows for your data to be stored as a binary via the `inline = false` keyword, which can be further optimized by specifying a supported [compression algorithm](@ref "Compression algorithms") to use via the `compression` keyword:
+By default, array data is written inline as a literal to the ASDF file. This can be stored and later accessed more efficiently by wrapping your data in an `ASDF.NDArrayWrapper`. This allows for your data to be stored as a binary via the `inline = false` keyword, which can be further optimized by specifying a supported [compression algorithm](@ref ASDF.Compression) to use via the `compression` keyword:
 
 ```@example intro
 af_payload = Dict{Any, Any}(
