@@ -1,10 +1,10 @@
 @testset "Read ASDF file with chunked arrays" begin
-    asdf = ASDF.load_file("chunking.asdf")
+    asdf = load("chunking.asdf")
     println(YAML.write(asdf.metadata))
 
     map_tree(output, asdf.metadata)
 
-    chunky = asdf.metadata["chunky"][]
+    chunky = asdf["chunky"][]
     @test eltype(chunky) == Float16
     @test size(chunky) == (4, 4)
     @test chunky == [

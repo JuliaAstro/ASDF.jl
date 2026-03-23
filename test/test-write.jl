@@ -16,26 +16,26 @@
             "element7" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Zstd),
         ),
     )
-    ASDF.write_file(filename, doc)
+    save(filename, doc)
 
-    doc′ = ASDF.load_file(filename)
+    doc′ = load(filename)
     map_tree(output, doc′.metadata)
 
     data1 = doc["data1"][]
-    data1′ = doc′.metadata["data1"][]
+    data1′ = doc′["data1"][]
     @test eltype(data1′) == eltype(data1)
     @test size(data1′) == size(data1)
     @test data1′ == data1
 
     data2 = doc["data2"][]
-    data2′ = doc′.metadata["data2"][]
+    data2′ = doc′["data2"][]
     @test eltype(data2′) == eltype(data2)
     @test size(data2′) == size(data2)
     @test data2′ == data2
 
     for n in 1:7
         element = doc["group"]["element$n"][]
-        element′ = doc′.metadata["group"]["element$n"][]
+        element′ = doc′["group"]["element$n"][]
         @test eltype(element′) == eltype(element)
         @test size(element′) == size(element)
         @test element′ == element
