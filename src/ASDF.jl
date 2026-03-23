@@ -261,7 +261,12 @@ end
 ################################################################################
 
 """
-    @enum ASDF.Byteorder Byteorder_little Byteorder_big
+    ASDF.Byteorder
+
+Represents the byte order of array data stored in a block. Available variants:
+
+- `Byteorder_little` : Little-endian
+- `Byteorder_big`: Big-endian
 """
 @enum Byteorder Byteorder_little Byteorder_big
 const byteorder_string_dict = Dict{Byteorder,String}(Byteorder_little => "little", Byteorder_big => "big")
@@ -269,21 +274,54 @@ const string_byteorder_dict = Dict{String,Byteorder}(val => key for (key, val) i
 
 """
     ASDF.Byteorder(str::AbstractString)::Byteorder
+
+Convenience conversion for [ASDF.Byteorder](@ref). Inverse of [`Base.string(byteorder::Byteorder)`](@ref).
+
+# Examples
+
+```jldoctest
+julia> ASDF.Byteorder("little")
+Byteorder_little::Byteorder = 0
+```
 """
 Byteorder(str::AbstractString) = string_byteorder_dict[str]
 
 """
     string(byteorder::Byteorder)::AbstractString
+
+Convenience conversion for [ASDF.Byteorder](@ref). Inverse of [`ASDF.Byteorder(str::AbstractString)`](@ref).
+
+# Examples
+
+```jldoctest
+julia> string(ASDF.Byteorder_little)
+"little"
+```
 """
 Base.string(byteorder::Byteorder) = byteorder_string_dict[byteorder]
 Base.show(io::IO, byteorder::Byteorder) = show(io, string(byteorder))
 
+"""
+    host_byteorder
+
+Native byte order of the running machine, detected at load time. Defined by [`ASDF.Byteorder`](@ref).
+"""
 const host_byteorder = reinterpret(UInt8, UInt16[1])[1] == 1 ? Byteorder_little : Byteorder_big
 
 ################################################################################
 
 """
-Careful, there is also `Base.DataType`, which is a different type.
+Maps ASDF datatype strings to Julia types. Note this is unrelated to `Base.DataType`. Defined mapping:
+
+| ASDF string             | Julia type              |
+| :---------------------- | :---------------------- |
+| `bool8`                 | `Bool`                  |
+| `int8` ... `int128`     | `Int8` ... `Int128`     |
+| `uint8` ... `uint128`   | `UInt8` ... `UInt128`   |
+| `float16` ... `float64` | `Float16` ... `Float64` |
+| `complex32`             |  `Complex{Float16}`     |
+| `complex64`             |  `Complex{Float32}`     |
+| `complex128`            |  `Complex{Float64}`     |
 """
 @enum Datatype begin
     Datatype_bool8
@@ -354,6 +392,19 @@ Datatype(type::Type) = type_datatype_dict[type]
 
 ################################################################################
 
+"""
+    NDArray
+
+A dense N-dimensional array, either backed lazily by a file block (`source`) or by an in-memory array (`data`). Exactly one of `source` and `data` is non-nothing. The array can be stored inline or in an ASDF binary block.
+
+- `source` -- zero-based index into the file's block list (mutually exclusive with `data`).
+- `data` -- in-memory array (mutually exclusive with `source`).
+- `shape` -- dimensions in Python/C order (outermost first). The Julia array has dimensions `reverse(shape)`.
+- `strides` -- byte strides in Python/C order.
+- `offset` -- byte offset into the block.
+
+The Julia array shape is `reverse(shape)` (column-major). Strides are always stored in row-major order to match the ASDF/Python convention.
+"""
 struct NDArray
     lazy_block_headers::LazyBlockHeaders
 
@@ -444,6 +495,17 @@ function make_construct_yaml_ndarray(block_headers::LazyBlockHeaders)
     return construct_yaml_ndarray
 end
 
+"""
+    Base.getindex(ndarray::NDArray)
+
+Returns the fully materialized array. See [`ASDF.NDArray`](@ref) for definitions. When block-backed (`source` !== `nothing`), this reads and decompresses the block, applies offset and strides via a [`StridedViews.StridedView`](https://github.com/QuantumKitHub/StridedViews.jl), reinterprets bytes to `Type(datatype)`, and byte-swaps if `byteorder != host_byteorder`. The returned array satisfies:
+
+```julia
+size(result) == Tuple(reverse(ndarray.shape))
+eltype(result) == Type(ndarray.datatype)
+sizeof(eltype) .* strides(result) == Tuple(reverse(ndarray.strides))
+```
+"""
 function Base.getindex(ndarray::NDArray)
     if ndarray.data !== nothing
         data = ndarray.data
@@ -480,6 +542,11 @@ end
 
 ################################################################################
 
+"""
+    NDArrayChunk
+
+A positioned tile within an [ASDF.ChunkedNDArray](@ref). `start` gives the zero-based origin of this chunk in the coordinate space of the parent array (Python/C order).
+"""
 struct NDArrayChunk
     start::Vector{Int64}
     ndarray::NDArray
@@ -505,6 +572,11 @@ function make_construct_yaml_ndarray_chunk(block_headers::LazyBlockHeaders)
     return construct_yaml_ndarray_chunk
 end
 
+"""
+    ChunkedNDArray
+
+An array composed of arbitrarily-positioned tiles. Gaps between chunks are left uninitialised. Overlapping chunks are written in order.
+"""
 struct ChunkedNDArray
     shape::Vector{Int64}
     datatype::Datatype
@@ -543,6 +615,11 @@ function make_construct_yaml_chunked_ndarray(block_headers::LazyBlockHeaders)
     return construct_yaml_chunked_ndarray
 end
 
+"""
+    Base.getindex(chunked_ndarray::ChunkedNDArray)
+
+Allocates a dense array of shape `reverse(shape)` and fills it by calling `chunk.ndarray[]` for each chunk, placing the result at the correct offset.
+"""
 function Base.getindex(chunked_ndarray::ChunkedNDArray)
     shape = chunked_ndarray.shape
     datatype = Type(chunked_ndarray.datatype)
