@@ -20,6 +20,10 @@ PkgVersion = "eebad327-c553-4316-9ea0-9fa01ccd7688"
 StridedViews = "4db3bf67-4bd7-4b4e-b153-31dc3fb37143"
 YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
+# TODO: Remove after https://github.com/JuliaIO/FileIO.jl/pull/427
+[sources]
+FileIO = {url = "https://github.com/icweaver/FileIO.jl", rev = "asdf"}
+
 [compat]
 AbstractTrees = "0.4.5"
 ChunkCodecLibBlosc = "0.2.0, 0.3"
@@ -28,6 +32,7 @@ ChunkCodecLibLz4 = "0.2.1, 1.0"
 ChunkCodecLibZlib = "0.2.0, 1.0"
 ChunkCodecLibZstd = "0.2.0, 1.0"
 CodecXz = "0.7.4"
+FileIO = "1"
 MD5 = "0.2.1"
 PkgVersion = "0.3.3"
 StridedViews = "0.2.1, 0.3, 0.4"
