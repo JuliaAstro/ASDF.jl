@@ -531,9 +531,30 @@ AbstractTrees.printnode(io::IO, n::ASDFTreeNode) =
     n.value isa AbstractVector   ? print(io, n.key, "::" , typeof(n.value), " | shape = ", size(n.value)) :
                                    print(io, n.key, "::",  typeof(n.value), " | ", n.value)
 
-function Base.show(io::IO, ::MIME"text/plain", af::ASDFFile)
-    AbstractTrees.print_tree(io, ASDFTreeNode(nothing, af))
+"""
+    info(io::IO, af::ASDFFile; max_rows = 20)
+
+Display up to `max_rows` lines of `af` tree. `Base.show` calls this function internally to display this type.
+"""
+function info(io::IO, af::ASDFFile; max_rows = 20)
+    root = ASDFTreeNode(nothing, af)
+    n_rows = sum(1 for _ in AbstractTrees.PostOrderDFS(root))
+
+    if n_rows < max_rows
+        AbstractTrees.print_tree(io, root)
+    else
+        # Store entire tree in `buf`
+        buf = IOBuffer()
+        AbstractTrees.print_tree(buf, root)
+        # Only print up to `n_rows` lines from that buffer
+        lines = split(String(take!(buf)), '\n', keepempty = false)
+        foreach(l -> println(io, l), Iterators.take(lines, max_rows))
+        println(io, "  ⋮  (", (n_rows - max_rows), ") more rows")
+    end
 end
+info(af; kwargs...) = info(stdout, af; kwargs...)
+
+Base.show(io::IO, ::MIME"text/plain", af::ASDFFile) = info(io, af) # Display up to `max_rows` by default
 
 ################################################################################
 
