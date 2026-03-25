@@ -516,7 +516,7 @@ end
 Base.getindex(af::ASDFFile, key) = af.metadata[key]
 
 struct ASDFTreeNode
-    key::Union{Any, Nothing}
+    key::Any
     value::Any
 end
 
@@ -540,7 +540,7 @@ function info(io::IO, af::ASDFFile; max_rows = 20)
     root = ASDFTreeNode(nothing, af)
     n_rows = sum(1 for _ in AbstractTrees.PostOrderDFS(root))
 
-    if n_rows < max_rows
+    if n_rows ≤ max_rows
         AbstractTrees.print_tree(io, root)
     else
         # Store entire tree in `buf`
@@ -549,7 +549,7 @@ function info(io::IO, af::ASDFFile; max_rows = 20)
         # Only print up to `n_rows` lines from that buffer
         lines = split(String(take!(buf)), '\n', keepempty = false)
         foreach(l -> println(io, l), Iterators.take(lines, max_rows))
-        println(io, "  ⋮  (", (n_rows - max_rows), ") more rows")
+        println(io, "  ⋮  (", n_rows - max_rows, ") more rows")
     end
 end
 info(af; kwargs...) = info(stdout, af; kwargs...)
