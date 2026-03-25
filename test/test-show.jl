@@ -22,4 +22,7 @@
     │  └─ dish_index::ASDF.NDArray | shape = [2, 3]
       ⋮  (5) more rows
     """
+
+    # I'm sure there's a better way to test this code path
+    @test ASDF.info(af; max_rows = 5) == nothing
 end
