@@ -2,7 +2,7 @@
     af = load("blue_upchan_gain.00000000.asdf")
 
     @test sprint(show, MIME"text/plain"(), af) == """
-    test/blue_upchan_gain.00000000.asdf
+    blue_upchan_gain.00000000.asdf
     ├─ 0::Int64
     │  ├─ buffer::ASDF.NDArray | shape = [256]
     │  ├─ dim_names::Vector{String} | shape = (1,)
@@ -15,7 +15,7 @@
     """
 
     @test sprint(io -> ASDF.info(io, af; max_rows = 5)) == """
-    test/blue_upchan_gain.00000000.asdf
+    blue_upchan_gain.00000000.asdf
     ├─ 0::Int64
     │  ├─ buffer::ASDF.NDArray | shape = [256]
     │  ├─ dim_names::Vector{String} | shape = (1,)
