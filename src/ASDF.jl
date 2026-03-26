@@ -138,7 +138,7 @@ function read_block_header(io::IO, position::Int64)
     STREAMED = Bool(flags & 0x1)
     # We don't handle streamed blocks yet
     if STREAMED
-        error("ASDF.jl does not support streamed blocks")
+        error("ASDF.jl does not yet support streamed blocks")
     end
 
     if allocated_size < used_size
@@ -328,10 +328,10 @@ struct NDArray
         strides::Vector{Int64},
     )
         if (source === nothing) + (data === nothing) != 1
-            throw(ArgumentError("Exactly one of `source` or `data` must be `nothing`."))
+            throw(ArgumentError("Exactly one of `source` or `data` must be provided."))
         end
         if source !== nothing && source < 0
-            throw(ArgumentError("`source` must be >= 0 if provided"))
+            throw(ArgumentError("`source` must be >= 0 if provided."))
         end
         if data !== nothing
             if eltype(data) != Type(datatype)
@@ -342,7 +342,7 @@ struct NDArray
             end
         end
         if offset < 0
-            throw(ArgumentError("`offset` must be >= 0"))
+            throw(ArgumentError("`offset` must be >= 0."))
         end
         if length(shape) != length(strides)
             throw(DimensionMismatch("`shape` and `strides` must have the same length."))
@@ -417,7 +417,10 @@ function Base.getindex(ndarray::NDArray)
     if ndarray.data !== nothing
         data = ndarray.data
         if ndarray.byteorder != host_byteorder
-            error("ndarray byteorder does not match system byteorder")
+            error(
+                "ndarray byteorder does not match system byteorder; ",
+                "byteorder swapping not yet implemented."
+            )
         end
     elseif ndarray.source !== nothing
         data = read_block(ndarray.lazy_block_headers.block_headers[ndarray.source + 1])
@@ -438,7 +441,7 @@ function Base.getindex(ndarray::NDArray)
             map!(bswap, data, data)
         end
     else
-        error("`ndarray` is in invalid state, both `data` and `source` are `nothing`.")
+        error("`ndarray` is in invalid state; neither `source` nor `data` is given.")
     end
 
     # Check array layout
@@ -449,7 +452,7 @@ function Base.getindex(ndarray::NDArray)
         error("`data` does not match type specified by `ndarray.datatype`")
     end
     if sizeof(eltype(data)) .* Base.strides(data) != Tuple(reverse(ndarray.strides))
-        error("`data` has different match stride specified by `ndarray.strides`")
+        error("`data` has different stride from `ndarray.strides`")
     end
 
     return data::AbstractArray
@@ -463,7 +466,7 @@ struct NDArrayChunk
 
     function NDArrayChunk(start::Vector{Int64}, ndarray::NDArray)
         if length(start) != length(ndarray.strides)
-            error("`start` of chunk does not match the number of `strides` in ndarray.")
+            error("`start` and `strides` have a different number of elements")
         end
         if any(start .< 0)
             error("`start` cannot contain negative values")
@@ -497,7 +500,7 @@ struct ChunkedNDArray
         end
         for chunk in chunks
             if length(chunk.start) != length(shape)
-                error("Incorrect number of dimensions specified by `chunks` and `shape`")
+                error("Different number of dimensions specified by `chunks` and `shape`")
             end
             # We allow overlaps and gaps in the chunks
             if !all(chunk.start .<= shape)
