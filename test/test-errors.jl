@@ -45,37 +45,35 @@ function test_read_block(msg; kwargs...)
     end
 end
 
-function yea()
-    @testset "read_block_header" begin
-        test_read_block_header("Number of bytes read from stream does not match length of header";
-            incomplete = true,
-        )
-        test_read_block_header("Block does not start with magic number";
-            magic = UInt8[0xd3, 0x42, 0x4c, 0x4c],
-        )
-        test_read_block_header("ASDF.jl does not yet support streamed blocks";
-            flags = UInt32(1),
-        )
-        test_read_block_header("ASDF file header incorrectly specifies amount of space to use";
-            allocated_size = UInt64(5),
-            used_size = UInt64(10),
-        )
-    end
+@testset "read_block_header" begin
+    test_read_block_header("Number of bytes read from stream does not match length of header";
+        incomplete = true,
+    )
+    test_read_block_header("Block does not start with magic number";
+        magic = UInt8[0xd3, 0x42, 0x4c, 0x4c],
+    )
+    test_read_block_header("ASDF.jl does not yet support streamed blocks";
+        flags = UInt32(1),
+    )
+    test_read_block_header("ASDF file header incorrectly specifies amount of space to use";
+        allocated_size = UInt64(5),
+        used_size = UInt64(10),
+    )
+end
 
-    @testset "read_block" begin
-        test_read_block("Number of bytes read from `header` does not match length of `data`";
-            allocated_size = UInt64(16),
-            used_size = UInt64(16),
-            data_size = UInt64(16),
-        )
-        test_read_block("Checksum mismatch in ASDF file header";
-            checksum = fill(0xFF, 16),
-        )
-        test_read_block("Invalid compression format found: C_Blosc2";
-            compression = ASDF.compression_keys[ASDF.C_Blosc2],
-        )
-        test_read_block("Actual data size different from declared data size in header.";
-            data_size = UInt64(9),
-        )
-    end
+@testset "read_block" begin
+    test_read_block("Number of bytes read from `header` does not match length of `data`";
+        allocated_size = UInt64(16),
+        used_size = UInt64(16),
+        data_size = UInt64(16),
+    )
+    test_read_block("Checksum mismatch in ASDF file header";
+        checksum = fill(0xFF, 16),
+    )
+    test_read_block("Invalid compression format found: C_Blosc2";
+        compression = ASDF.compression_keys[ASDF.C_Blosc2],
+    )
+    test_read_block("Actual data size different from declared data size in header.";
+        data_size = UInt64(9),
+    )
 end
