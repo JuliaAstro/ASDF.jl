@@ -170,7 +170,7 @@ function read_block(header::BlockHeader)
     end
 
     # Check checksum
-    if any(header.checksum != 0)
+    if any(!iszero, header.checksum)
         actual_checksum = md5(data)
         if any(actual_checksum != header.checksum)
             error("Checksum mismatch in ASDF file header")
