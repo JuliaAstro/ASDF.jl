@@ -92,4 +92,9 @@ end
     @test_throws "ndarray byteorder does not match system byteorder; byteorder swapping not yet implemented." begin
         nd[]
     end
+
+    nd = make_ndarray(; strides = Int64[5])
+    @test_throws "`data` has different stride from `ndarray.strides`" begin
+        nd[]
+    end
 end
