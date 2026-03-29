@@ -110,3 +110,31 @@ end
         ASDF.NDArrayChunk(Int64[-1], nd)
     end
 end
+
+@testset "chunked ndarray" begin
+    @test_throws "`shape` cannot contain negative values" begin
+        ASDF.ChunkedNDArray(Int64[-1], ASDF.Datatype_int32, ASDF.NDArrayChunk[])
+    end
+
+    nd = make_ndarray()
+
+    @test_throws "Different number of dimensions specified by `chunks` and `shape`" begin
+        chunk = ASDF.NDArrayChunk(Int64[0], nd)
+        ASDF.ChunkedNDArray(Int64[], ASDF.Datatype_int32, [chunk])
+    end
+
+    @test_throws "`chunk.start` exceeds number of elements in dimension" begin
+        chunk = ASDF.NDArrayChunk(Int64[5], nd)
+        ASDF.ChunkedNDArray(Int64[2], ASDF.Datatype_int32, [chunk])
+    end
+
+    @test_throws "`chunk` exceeds number of elements as specified by `shape`" begin
+        chunk = ASDF.NDArrayChunk(Int64[0], nd)
+        ASDF.ChunkedNDArray(Int64[1], ASDF.Datatype_int32, [chunk])
+    end
+
+    @test_throws "`datatype` and type of `chunk` cannot be different" begin
+        chunk = ASDF.NDArrayChunk(Int64[0], nd)
+        ASDF.ChunkedNDArray(Int64[6], ASDF.Datatype_int8, [chunk])
+    end
+end
