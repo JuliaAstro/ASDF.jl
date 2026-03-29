@@ -32,7 +32,6 @@ function test_ndarray(error_type, error_message; kwargs...)
     end
 end
 
-function yea()
 @testset "construction" begin
     test_ndarray(
         ArgumentError,
@@ -93,5 +92,4 @@ end
     @test_throws "ndarray byteorder does not match system byteorder; byteorder swapping not yet implemented." begin
         nd[]
     end
-end
 end
