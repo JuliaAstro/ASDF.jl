@@ -98,3 +98,15 @@ end
         nd[]
     end
 end
+
+@testset "ndarray chunk" begin
+    nd = make_ndarray()
+
+    @test_throws "start` and `strides` have a different number of elements" begin
+        ASDF.NDArrayChunk(Int64[1, 2], nd)
+    end
+
+    @test_throws "`start` cannot contain negative values" begin
+        ASDF.NDArrayChunk(Int64[-1], nd)
+    end
+end
