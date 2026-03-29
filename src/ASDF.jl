@@ -441,13 +441,17 @@ function Base.getindex(ndarray::NDArray)
             map!(bswap, data, data)
         end
     else
+        # TODO: This branch seems to be unreachable since it is already
+        # caught in the constructor for `NDArray`
         error("`ndarray` is in invalid state; neither `source` nor `data` is given.")
     end
 
     # Check array layout
+    # TODO: is this path unreachable?
     if size(data) != Tuple(reverse(ndarray.shape))
         error("`data` does not conform to specified `ndarray.shape`")
     end
+    # TODO: is this path unreachable?
     if eltype(data) != Type(ndarray.datatype)
         error("`data` does not match type specified by `ndarray.datatype`")
     end
