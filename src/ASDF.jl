@@ -653,9 +653,37 @@ function load_file(filename::AbstractString)
     return ASDFFile(filename, metadata, lazy_block_headers)
 end
 
+"""
+    load(f::AbstractString)
+
+Load an asdf file at filepath `f`.
+
+## Examples
+
+```jldoctest
+julia> doc = Dict("field_\$(i)" => rand(10) for i in 1:5); # Create some sample data
+
+julia> save("myfile.asdf", doc)
+
+julia> load("myfile.asdf")
+myfile.asdf
+├─ field_5::Vector{Float64} | shape = (10,)
+├─ field_3::Vector{Float64} | shape = (10,)
+├─ field_1::Vector{Float64} | shape = (10,)
+├─ asdf/library::String
+│  ├─ author::String | Erik Schnetter <schnetter@gmail.com>
+│  ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
+│  ├─ name::String | ASDF.jl
+│  └─ version::String | 2.0.0
+├─ field_2::Vector{Float64} | shape = (10,)
+└─ field_4::Vector{Float64} | shape = (10,)
+```
+"""
 function fileio_load(f::File{format"ASDF"})
     return load_file(f.filename)
 end
+
+@doc (@doc fileio_load) load
 
 ################################################################################
 ################################################################################
@@ -873,8 +901,23 @@ function write_file(filename::AbstractString, document::Dict)
     return nothing
 end
 
+"""
+    save(f::String, data)
+
+Save `data` to an asdf file at filepath `f`.
+
+## Examples
+
+```jldoctest
+julia> data = Dict("field_\$(i)" => rand(10) for i in 1:5); # Create some sample data
+
+julia> save("myfile.asdf", doc)
+```
+"""
 function fileio_save(f::File{format"ASDF"}, data)
     return write_file(f.filename, data)
 end
+
+@doc (@doc fileio_save) save
 
 end
