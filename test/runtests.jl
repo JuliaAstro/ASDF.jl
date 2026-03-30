@@ -1,6 +1,11 @@
 using ParallelTestRunner: runtests, find_tests, parse_args
 using ASDF
 
+# Doctest
+using Documenter
+DocMeta.setdocmeta!(ASDF, :DocTestSetup, :(using ASDF); recursive = true)
+doctest(ASDF)
+
 const init_code = quote
     using ASDF
     using Test
