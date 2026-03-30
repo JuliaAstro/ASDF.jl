@@ -911,7 +911,7 @@ Save `data` to an asdf file at filepath `f`.
 ```jldoctest
 julia> data = Dict("field_\$(i)" => rand(10) for i in 1:5); # Create some sample data
 
-julia> save("myfile.asdf", doc)
+julia> save("myfile.asdf", data)
 ```
 """
 function fileio_save(f::File{format"ASDF"}, data)
