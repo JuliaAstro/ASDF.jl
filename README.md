@@ -32,4 +32,5 @@ doc = Dict(<data>)
 ASDF.write_file("<new_file.asdf>", doc)
 ```
 
-See [`ASDF.jl v1`](https://github.com/JuliaAstro/ASDF.jl/releases/tag/v1.1.3) for the older one which is based on the Python [`asdf`](https://github.com/spacetelescope/asdf) Python package.
+=======
+See [`ASDF.jl v1`](https://github.com/JuliaAstro/ASDF.jl/tree/v1) for the older one which is based on the Python [`asdf`](https://github.com/spacetelescope/asdf) Python package.
