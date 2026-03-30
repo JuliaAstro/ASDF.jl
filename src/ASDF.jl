@@ -662,13 +662,13 @@ function write_file(filename::AbstractString, document::Dict)
 
     # Ensure standard tags are present
     # TODO:
-    # - provide a function that generates a standard empty document
-    # - don't modify the input
-    # - remove the `{Any,Any}` in the test cases
-    # - maybe make the document not a `Dict` but the stuff with the `metadata` that the writer returns?
-    get!(document, "asdf/library") do
-        ASDFLibrary(software_name, software_author, software_homepage, software_version)
-    end
+    # - [ ] provide a function that generates a standard empty document
+    # - [x] don't modify the input
+    # - [x] remove the `{Any,Any}` in the test cases
+    # - [ ] maybe make the document not a `Dict` but the stuff with the `metadata` that the writer returns?
+    # - [ ] preserve insertion order? https://github.com/JuliaAstro/ASDF.jl/tree/ordered
+    library = ASDFLibrary(software_name, software_author, software_homepage, software_version)
+    full_document = merge(Dict{Any, Any}(document), Dict{Any, Any}("asdf/library" => library))
 
     # Write YAML part of file
     io = open(filename, "w")
@@ -682,7 +682,7 @@ function write_file(filename::AbstractString, document::Dict)
            ---
            !core/asdf-1.1.0""",
     )
-    YAML.write(io, document)
+    YAML.write(io, full_document)
     println(io, "...")
 
     # Write blocks

@@ -3,10 +3,10 @@
     filename = joinpath(dirname, "output.asdf")
 
     array = Float64[1/(i+j+k-2) for i in 1:50, j in 1:51, k in 1:52]
-    doc = Dict{Any,Any}(
+    doc = Dict(
         "data1" => ASDF.NDArrayWrapper([1 2; 3 4]; inline=false),
         "data2" => ASDF.NDArrayWrapper([1 2; 3 4]; inline=true),
-        "group" => Dict{Any,Any}(
+        "group" => Dict(
             "element1" => ASDF.NDArrayWrapper(array; compression=ASDF.C_None),
             "element2" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Blosc),
             "element3" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Bzip2),
