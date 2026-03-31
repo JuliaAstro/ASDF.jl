@@ -449,7 +449,9 @@ function Base.getindex(ndarray::NDArray)
     # Check array layout
     @assert size(data) == Tuple(reverse(ndarray.shape)) # `data` conforms to specified `ndarray.shape`
     @assert eltype(data) == Type(ndarray.datatype) # `data` matches type specified by `ndarray.datatype`
-    @assert sizeof(eltype(data)) .* Base.strides(data) == Tuple(reverse(ndarray.strides)) # `data` has same stride as`ndarray.strides`
+    if sizeof(eltype(data)) .* Base.strides(data) != Tuple(reverse(ndarray.strides))
+        error("`data` has different stride from `ndarray.strides`")
+    end
 
     return data::AbstractArray
 end
