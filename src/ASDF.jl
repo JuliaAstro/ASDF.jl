@@ -542,7 +542,7 @@ Display up to `max_rows` lines of `af` tree. `Base.show` calls this function int
 ```jldoctest
 julia> using OrderedCollections: OrderedDict
 
-julia> doc = Dict("field_\$(i)" => rand(10) for i in 1:25);
+julia> doc = OrderedDict("field_\$(i)" => rand(10) for i in 1:25);
 
 julia> save("long.asdf", doc)
 
