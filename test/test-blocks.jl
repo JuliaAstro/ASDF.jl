@@ -30,12 +30,12 @@ function make_block_header(; kwargs...)
     write(io, make_raw_header(; kwargs...))
     write(io, zeros(UInt8)) # Hard-coded payload
     seekstart(io)
-    return ASDF.read_block_header(io, Int64(0))
+    return ASDF.read_block_header(io, Int64(0); validate_checksum = true)
 end
 
 function test_read_block_header(msg; kwargs...)
     io = make_raw_header(; kwargs...) |> IOBuffer
-    @test_throws msg ASDF.read_block_header(io, Int64(0))
+    @test_throws msg ASDF.read_block_header(io, Int64(0); validate_checksum = true)
 end
 
 function test_read_block(msg; kwargs...)
