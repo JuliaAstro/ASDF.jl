@@ -40,4 +40,9 @@
         @test size(element′) == size(element)
         @test element′ == element
     end
+
+    @test_throws "`array` has invalid state: `compression` field has value not specified in `Compression` enum." begin
+        doc = Dict{Any, Any}("field1" => ASDF.NDArrayWrapper([5, 6, 7, 8]; compression = ASDF.C_Blosc2))
+        ASDF.write_file(filename, doc)
+    end
 end
