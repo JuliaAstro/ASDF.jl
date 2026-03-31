@@ -441,23 +441,15 @@ function Base.getindex(ndarray::NDArray)
             map!(bswap, data, data)
         end
     else
-        # TODO: This branch seems to be unreachable since it is already
-        # caught in the constructor for `NDArray`
-        error("`ndarray` is in invalid state; neither `source` nor `data` is given.")
+        # Caught in the constructor for `NDArray`. This branch would imply that
+        # `ndarray` is in invalid state; neither `source` nor `data` is given.
+        @assert false
     end
 
     # Check array layout
-    # TODO: is this path unreachable?
-    if size(data) != Tuple(reverse(ndarray.shape))
-        error("`data` does not conform to specified `ndarray.shape`")
-    end
-    # TODO: is this path unreachable?
-    if eltype(data) != Type(ndarray.datatype)
-        error("`data` does not match type specified by `ndarray.datatype`")
-    end
-    if sizeof(eltype(data)) .* Base.strides(data) != Tuple(reverse(ndarray.strides))
-        error("`data` has different stride from `ndarray.strides`")
-    end
+    @assert size(data) == Tuple(reverse(ndarray.shape)) # `data` conforms to specified `ndarray.shape`
+    @assert eltype(data) == Type(ndarray.datatype) # `data` matches type specified by `ndarray.datatype`
+    @assert sizeof(eltype(data)) .* Base.strides(data) == Tuple(reverse(ndarray.strides)) # `data` has same stride as`ndarray.strides`
 
     return data::AbstractArray
 end
@@ -781,18 +773,11 @@ function write_file(filename::AbstractString, document::Dict{Any,Any})
 
         # Check consistency
         endpos = position(io)
-        # TODO: Is this codepath reachable?
-        if endpos != pos + 6 + header_size + allocated_size
-            error("Ending position does not match number of bytes written")
-        end
+        @assert endpos == pos + 6 + header_size + allocated_size # Ending position matches number of bytes written
     end
-    # TODO: Is this codepath reachable?
-    if length(blocks.positions) != length(blocks.arrays)
-        error(
-            "Global `blocks` has invalid state: number of arrays does not match number of `positions`. ",
-            "Check for mismatches between `write_file()` and `YAML._print()`."
-        )
-    end
+    # Global `blocks` should have valid state: number of arrays matches number of `positions`.
+    # If not, check that `write_file()` and `YAML._print()` match.
+    @assert length(blocks.positions) == length(blocks.arrays)
 
     # Write block list
     println(io, "#ASDF BLOCK INDEX")
