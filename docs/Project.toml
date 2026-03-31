@@ -1,7 +1,6 @@
 [deps]
 ASDF = "686f71d1-807d-59a4-a860-28280ea06d7b"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
-OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 
 [compat]
 Documenter = "1"
