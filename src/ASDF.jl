@@ -781,10 +781,12 @@ function write_file(filename::AbstractString, document::Dict{Any,Any})
 
         # Check consistency
         endpos = position(io)
+        # TODO: Is this codepath reachable?
         if endpos != pos + 6 + header_size + allocated_size
             error("Ending position does not match number of bytes written")
         end
     end
+    # TODO: Is this codepath reachable?
     if length(blocks.positions) != length(blocks.arrays)
         error(
             "Global `blocks` has invalid state: number of arrays does not match number of `positions`. ",

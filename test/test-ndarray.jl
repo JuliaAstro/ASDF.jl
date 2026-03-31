@@ -102,6 +102,11 @@ end
 @testset "ndarray chunk" begin
     nd = make_ndarray()
 
+    @test begin
+        ndc = ASDF.NDArrayChunk(0:0, make_ndarray())
+        ndc.start == [0]
+    end
+
     @test_throws "start` and `strides` have a different number of elements" begin
         ASDF.NDArrayChunk(Int64[1, 2], nd)
     end
