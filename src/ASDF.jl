@@ -522,12 +522,12 @@ struct ASDFTreeNode
 end
 
 AbstractTrees.children(n::ASDFTreeNode) =
-    n.value isa ASDFFile ? [ASDFTreeNode(k, v) for (k, v) in n.value.metadata] :
-    n.value isa Dict     ? [ASDFTreeNode(k, v) for (k, v) in sort(collect(n.value); by = first)] : ()
+    n.value isa ASDFFile         ? [ASDFTreeNode(k, v) for (k, v) in n.value.metadata] :
+    n.value isa AbstractDict     ? [ASDFTreeNode(k, v) for (k, v) in sort(collect(n.value); by = first)] : ()
 
 AbstractTrees.printnode(io::IO, n::ASDFTreeNode) =
     n.key === nothing            ? print(io, basename(n.value.filename))                                         :
-    n.value isa Dict             ? print(io, n.key, "::",  typeof(n.key))                              :
+    n.value isa AbstractDict     ? print(io, n.key, "::",  typeof(n.key))                              :
     n.value isa NDArray          ? print(io, n.key, "::",  typeof(n.value), " | shape = ", n.value.shape) :
     n.value isa AbstractVector   ? print(io, n.key, "::" , typeof(n.value), " | shape = ", size(n.value)) :
                                    print(io, n.key, "::",  typeof(n.value), " | ", n.value)
@@ -540,75 +540,75 @@ Display up to `max_rows` lines of `af` tree. `Base.show` calls this function int
 ## Examples
 
 ```jldoctest
+julia> using OrderedCollections: OrderedDict
+
 julia> doc = Dict("field_\$(i)" => rand(10) for i in 1:25);
 
 julia> save("long.asdf", doc)
 
 julia> af = load("long.asdf")
 long.asdf
-├─ field_22::Vector{Float64} | shape = (10,)
-├─ field_24::Vector{Float64} | shape = (10,)
-├─ field_11::Vector{Float64} | shape = (10,)
+├─ field_1::Vector{Float64} | shape = (10,)
 ├─ field_2::Vector{Float64} | shape = (10,)
-├─ field_4::Vector{Float64} | shape = (10,)
-├─ field_20::Vector{Float64} | shape = (10,)
-├─ asdf/library::String
-│  ├─ author::String | Erik Schnetter <schnetter@gmail.com>
-│  ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
-│  ├─ name::String | ASDF.jl
-│  └─ version::String | 2.0.0
-├─ field_15::Vector{Float64} | shape = (10,)
-├─ field_18::Vector{Float64} | shape = (10,)
-├─ field_25::Vector{Float64} | shape = (10,)
-├─ field_12::Vector{Float64} | shape = (10,)
-├─ field_5::Vector{Float64} | shape = (10,)
 ├─ field_3::Vector{Float64} | shape = (10,)
+├─ field_4::Vector{Float64} | shape = (10,)
+├─ field_5::Vector{Float64} | shape = (10,)
+├─ field_6::Vector{Float64} | shape = (10,)
 ├─ field_7::Vector{Float64} | shape = (10,)
+├─ field_8::Vector{Float64} | shape = (10,)
 ├─ field_9::Vector{Float64} | shape = (10,)
-  ⋮  (11) more rows
-
+├─ field_10::Vector{Float64} | shape = (10,)
+├─ field_11::Vector{Float64} | shape = (10,)
+├─ field_12::Vector{Float64} | shape = (10,)
+├─ field_13::Vector{Float64} | shape = (10,)
+├─ field_14::Vector{Float64} | shape = (10,)
+├─ field_15::Vector{Float64} | shape = (10,)
+├─ field_16::Vector{Float64} | shape = (10,)
+├─ field_17::Vector{Float64} | shape = (10,)
+├─ field_18::Vector{Float64} | shape = (10,)
+├─ field_19::Vector{Float64} | shape = (10,)
+  ⋮  (7) more rows
 
 julia> ASDF.info(af; max_rows = 5)
 long.asdf
-├─ field_22::Vector{Float64} | shape = (10,)
-├─ field_24::Vector{Float64} | shape = (10,)
-├─ field_11::Vector{Float64} | shape = (10,)
+├─ field_1::Vector{Float64} | shape = (10,)
 ├─ field_2::Vector{Float64} | shape = (10,)
-  ⋮  (26) more rows
+├─ field_3::Vector{Float64} | shape = (10,)
+├─ field_4::Vector{Float64} | shape = (10,)
+  ⋮  (22) more rows
 
 julia> ASDF.info(af; max_rows = Inf)
 long.asdf
-├─ field_22::Vector{Float64} | shape = (10,)
-├─ field_24::Vector{Float64} | shape = (10,)
-├─ field_11::Vector{Float64} | shape = (10,)
-├─ field_2::Vector{Float64} | shape = (10,)
-├─ field_4::Vector{Float64} | shape = (10,)
-├─ field_20::Vector{Float64} | shape = (10,)
-├─ asdf/library::String
-│  ├─ author::String | Erik Schnetter <schnetter@gmail.com>
-│  ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
-│  ├─ name::String | ASDF.jl
-│  └─ version::String | 2.0.0
-├─ field_15::Vector{Float64} | shape = (10,)
-├─ field_18::Vector{Float64} | shape = (10,)
-├─ field_25::Vector{Float64} | shape = (10,)
-├─ field_12::Vector{Float64} | shape = (10,)
-├─ field_5::Vector{Float64} | shape = (10,)
-├─ field_3::Vector{Float64} | shape = (10,)
-├─ field_7::Vector{Float64} | shape = (10,)
-├─ field_9::Vector{Float64} | shape = (10,)
-├─ field_16::Vector{Float64} | shape = (10,)
-├─ field_19::Vector{Float64} | shape = (10,)
 ├─ field_1::Vector{Float64} | shape = (10,)
-├─ field_14::Vector{Float64} | shape = (10,)
+├─ field_2::Vector{Float64} | shape = (10,)
+├─ field_3::Vector{Float64} | shape = (10,)
+├─ field_4::Vector{Float64} | shape = (10,)
+├─ field_5::Vector{Float64} | shape = (10,)
 ├─ field_6::Vector{Float64} | shape = (10,)
-├─ field_21::Vector{Float64} | shape = (10,)
-├─ field_10::Vector{Float64} | shape = (10,)
-├─ field_13::Vector{Float64} | shape = (10,)
-├─ field_17::Vector{Float64} | shape = (10,)
+├─ field_7::Vector{Float64} | shape = (10,)
 ├─ field_8::Vector{Float64} | shape = (10,)
-└─ field_23::Vector{Float64} | shape = (10,)
-```
+├─ field_9::Vector{Float64} | shape = (10,)
+├─ field_10::Vector{Float64} | shape = (10,)
+├─ field_11::Vector{Float64} | shape = (10,)
+├─ field_12::Vector{Float64} | shape = (10,)
+├─ field_13::Vector{Float64} | shape = (10,)
+├─ field_14::Vector{Float64} | shape = (10,)
+├─ field_15::Vector{Float64} | shape = (10,)
+├─ field_16::Vector{Float64} | shape = (10,)
+├─ field_17::Vector{Float64} | shape = (10,)
+├─ field_18::Vector{Float64} | shape = (10,)
+├─ field_19::Vector{Float64} | shape = (10,)
+├─ field_20::Vector{Float64} | shape = (10,)
+├─ field_21::Vector{Float64} | shape = (10,)
+├─ field_22::Vector{Float64} | shape = (10,)
+├─ field_23::Vector{Float64} | shape = (10,)
+├─ field_24::Vector{Float64} | shape = (10,)
+├─ field_25::Vector{Float64} | shape = (10,)
+└─ asdf/library::String
+   ├─ author::String | Erik Schnetter <schnetter@gmail.com>
+   ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
+   ├─ name::String | ASDF.jl
+   └─ version::String | 2.0.0
 """
 function info(io::IO, af::ASDFFile; max_rows = 20)
     root = ASDFTreeNode(nothing, af)
@@ -664,22 +664,24 @@ Load an asdf file at filepath `f`.
 ## Examples
 
 ```jldoctest
-julia> doc = Dict("field_\$(i)" => rand(10) for i in 1:5); # Create some sample data
+julia> using OrderedCollections: OrderedDict
+
+julia> doc = OrderedDict("field_\$(i)" => rand(10) for i in 1:5); # Create some sample data
 
 julia> save("myfile.asdf", doc)
 
 julia> load("myfile.asdf")
 myfile.asdf
-├─ field_5::Vector{Float64} | shape = (10,)
-├─ field_3::Vector{Float64} | shape = (10,)
 ├─ field_1::Vector{Float64} | shape = (10,)
-├─ asdf/library::String
-│  ├─ author::String | Erik Schnetter <schnetter@gmail.com>
-│  ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
-│  ├─ name::String | ASDF.jl
-│  └─ version::String | 2.0.0
 ├─ field_2::Vector{Float64} | shape = (10,)
-└─ field_4::Vector{Float64} | shape = (10,)
+├─ field_3::Vector{Float64} | shape = (10,)
+├─ field_4::Vector{Float64} | shape = (10,)
+├─ field_5::Vector{Float64} | shape = (10,)
+└─ asdf/library::String
+   ├─ author::String | Erik Schnetter <schnetter@gmail.com>
+   ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
+   ├─ name::String | ASDF.jl
+   └─ version::String | 2.0.0
 ```
 """
 function fileio_load(f::File{format"ASDF"})
@@ -912,7 +914,9 @@ Save `data` to an asdf file at filepath `f`.
 ## Examples
 
 ```jldoctest
-julia> data = Dict("field_\$(i)" => rand(10) for i in 1:5); # Create some sample data
+julia> using OrderedCollections: OrderedDict
+
+julia> data = OrderedDict("field_\$(i)" => rand(10) for i in 1:5); # Create some sample data
 
 julia> save("myfile.asdf", data)
 ```
