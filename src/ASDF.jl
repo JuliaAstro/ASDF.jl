@@ -772,7 +772,7 @@ function write_file(filename::AbstractString, document::AbstractDict)
     # - [ ] maybe make the document not a `Dict` but the stuff with the `metadata` that the writer returns?
     # - [ ] preserve insertion order? https://github.com/JuliaAstro/ASDF.jl/tree/ordered
     library = ASDFLibrary(software_name, software_author, software_homepage, software_version)
-    full_document = merge(Dict{Any, Any}(document), Dict{Any, Any}("asdf/library" => library))
+    full_document = merge(document, OrderedDict{Any, Any}("asdf/library" => library))
 
     # Write YAML part of file
     io = open(filename, "w")
