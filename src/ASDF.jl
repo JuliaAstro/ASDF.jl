@@ -10,6 +10,7 @@ using MD5: md5
 using PkgVersion: PkgVersion
 using StridedViews: StridedView
 using YAML: YAML
+using Dictionaries: Dictionary
 
 ################################################################################
 
@@ -501,7 +502,7 @@ end
 
 struct ASDFFile
     filename::AbstractString
-    metadata::Dict{Any,Any}
+    metadata::Dictionary{Any,Any}
     lazy_block_headers::LazyBlockHeaders
 end
 
@@ -511,9 +512,11 @@ end
 
 ################################################################################
 
+ordered_map_constructor = (constructor, node) -> YAML.construct_mapping(Dictionary{Any,Any}, constructor, node)
 asdf_constructors = copy(YAML.default_yaml_constructors)
-asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = asdf_constructors["tag:yaml.org,2002:map"]
-asdf_constructors["tag:stsci.edu:asdf/core/software-1.0.0"] = asdf_constructors["tag:yaml.org,2002:map"]
+delete!(asdf_constructors, "tag:yaml.org,2002:map")  # Let dicttype= handle plain maps
+asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = ordered_map_constructor
+asdf_constructors["tag:stsci.edu:asdf/core/software-1.0.0"] = ordered_map_constructor
 
 function load_file(filename::AbstractString)
     io = open(filename, "r")
@@ -527,7 +530,7 @@ function load_file(filename::AbstractString)
     asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-chunk-1.0.0"] = construct_yaml_ndarray_chunk
     asdf_constructors′["tag:stsci.edu:asdf/core/chunked-ndarray-1.0.0"] = construct_yaml_chunked_ndarray
 
-    metadata = YAML.load(io, asdf_constructors′)
+    metadata = YAML.load(io, asdf_constructors′; dicttype = Dictionary{Any, Any})
     # lazy_block_headers.block_headers = find_all_blocks(io, position(io))
     lazy_block_headers.block_headers = find_all_blocks(io)
     return ASDFFile(filename, metadata, lazy_block_headers)
@@ -545,7 +548,7 @@ struct ASDFLibrary
 end
 function YAML._print(io::IO, val::ASDFLibrary, level::Int=0, ignore_level::Bool=false)
     println(io, "!core/software-1.0.0")
-    library = Dict(:name => val.name, :author => val.author, :homepage => val.homepage, :version => val.version)
+    library = Dictionary((name = val.name, author = val.author, homepage = val.homepage, version = val.version))
     YAML._print(io, library, level, ignore_level)
 end
 
@@ -579,32 +582,32 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bo
         data = val.array
         # Split multidimensional arrays into array-of-arrays
         data = eachslice(data; dims=Tuple(2:ndims(data)))
-        ndarray = Dict(
-            :data => data,
-            :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
-            :datatype => string(Datatype(eltype(val.array))),
-            # :offset => 0::Integer,
-            # :strides => ::Vector{Int64},
-        )
+        ndarray = Dictionary((
+            data = data,
+            shape = collect(reverse(size(val.array)))::Vector{<:Integer},
+            datatype = string(Datatype(eltype(val.array))),
+            # offset => 0::Integer,
+            # strides => ::Vector{Int64},
+       ))
     else
         global blocks
         source = length(blocks.arrays)
         push!(blocks.arrays, val)
-        ndarray = Dict(
-            :source => source::Integer,
-            :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
-            :datatype => string(Datatype(eltype(val.array))),
-            :byteorder => string(host_byteorder::Byteorder),
+        ndarray = Dictionary((
+            source = source::Integer,
+            shape = collect(reverse(size(val.array)))::Vector{<:Integer},
+            datatype = string(Datatype(eltype(val.array))),
+            byteorder = string(host_byteorder::Byteorder),
             # :offset => 0::Integer,
             # :strides => ::Vector{Int64},
-        )
+       ))
     end
     # println(io, YAML._indent("-\n", level), "!core/chunked-ndarray-1.0.0")
     println(io, "!core/ndarray-1.0.0")
     YAML._print(io, ndarray, level, ignore_level)
 end
 
-function write_file(filename::AbstractString, document::Dict{Any,Any})
+function write_file(filename::AbstractString, document::Dictionary{Any,Any})
     # Set up block descriptors
     global blocks
     empty!(blocks)
@@ -615,9 +618,9 @@ function write_file(filename::AbstractString, document::Dict{Any,Any})
     # - don't modify the input
     # - remove the `{Any,Any}` in the test cases
     # - maybe make the document not a `Dict` but the stuff with the `metadata` that the writer returns?
-    get!(document, "asdf/library") do
+    insert!(document, Symbol("asdf/library"),
         ASDFLibrary(software_name, software_author, software_homepage, software_version)
-    end
+    )
 
     # Write YAML part of file
     io = open(filename, "w")
