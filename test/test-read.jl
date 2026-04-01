@@ -18,3 +18,7 @@
         43 54
     ]
 end
+
+@testset "helper functions" begin
+    @test ASDF.big2native_U8(UInt8[5, 6, 7]) == 0x05
+end

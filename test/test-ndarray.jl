@@ -86,11 +86,20 @@ end
 end
 
 @testset "getindex" begin
-    nd = make_ndarray(;
-        byteorder = ASDF.host_byteorder == ASDF.Byteorder_little ? ASDF.Byteorder_big : ASDF.Byteorder_little
-    )
+    opposite = ASDF.host_byteorder == ASDF.Byteorder_little ? ASDF.Byteorder_big : ASDF.Byteorder_little
+
+    nd = make_ndarray(; byteorder = opposite)
     @test_throws "ndarray byteorder does not match system byteorder; byteorder swapping not yet implemented." begin
         nd[]
+    end
+
+    @testset "byteorder swap on source path" begin
+        expected  = Int32[1, 2, 3, 4]
+        disk_bytes = collect(reinterpret(UInt8, bswap.(expected)))
+        lbh    = ASDF.LazyBlockHeaders()
+        push!(lbh.block_headers, make_block_header(disk_bytes))
+        nd = make_ndarray(; lazy_block_headers = lbh,  source = Int64(0), data = nothing, byteorder = opposite)
+        @test nd[] == expected
     end
 
     nd = make_ndarray(; strides = Int64[5])
