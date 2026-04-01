@@ -21,8 +21,6 @@ function make_ndarray(;
     return nd
 end
 
-# TODO: Can combine these into a single call in Julia v1.13
-# https://github.com/JuliaLang/julia/pull/59117
 function test_ndarray(error_type, error_message; kwargs...)
     @test_throws error_type(error_message) make_ndarray(; kwargs...)
 end
