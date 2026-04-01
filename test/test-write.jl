@@ -47,3 +47,14 @@
         ASDF.write_file(filename, doc)
     end
 end
+
+@testset "Write `ASDFFile`" begin
+    file = ASDF.ASDFFile("my_file.asdf", Dict{Any, Any}("x" => 1), ASDF.LazyBlockHeaders())
+    result = YAML.write(file)
+    @test result == "[ASDF file \"my_file.asdf\"]\nx: 1\n"
+end
+
+@testset "helper functions" begin
+    @test ASDF.native2big_U8(0x05) == [0x05]
+    @test ASDF.native2big_U8(5) == [0x05]
+end
