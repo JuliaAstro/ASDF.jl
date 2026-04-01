@@ -19,6 +19,17 @@
     ]
 end
 
+@testset "find_first_block" begin
+    io = IOBuffer([zeros(UInt8, 10); ASDF.block_magic_token; zeros(UInt8, 50)])
+    @test ASDF.find_first_block(io) == Int64(10)
+end
+
+@testset "find_first_block with token beyond first 10 MB buffer" begin
+    preamble = zeros(UInt8, 10_000_000)
+    io = IOBuffer([preamble; ASDF.block_magic_token; zeros(UInt8, 50)])
+    @test ASDF.find_first_block(io) == Int64(10_000_000)
+end
+
 @testset "helper functions" begin
     @test ASDF.big2native_U8(UInt8[5, 6, 7]) == 0x05
 end
