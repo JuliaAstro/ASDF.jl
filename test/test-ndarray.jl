@@ -24,12 +24,7 @@ end
 # TODO: Can combine these into a single call in Julia v1.13
 # https://github.com/JuliaLang/julia/pull/59117
 function test_ndarray(error_type, error_message; kwargs...)
-    @test_throws error_type begin
-        make_ndarray(; kwargs...)
-    end &&
-    @test_throws error_message begin
-        make_ndarray(; kwargs...)
-    end
+    @test_throws error_type(error_message) make_ndarray(; kwargs...)
 end
 
 @testset "construction" begin
@@ -76,6 +71,8 @@ end
     test_ndarray(
         ArgumentError,
         "`shape` cannot have negative elements.";
+        source = Int64(0),
+        data = nothing,
         shape = Int64[-1],
     )
     test_ndarray(
