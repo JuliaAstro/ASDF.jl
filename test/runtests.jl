@@ -67,7 +67,7 @@ const init_code = quote
         ))
         write(io, data_bytes)
         seekstart(io)
-        return ASDF.read_block_header(io, Int64(0))
+        return ASDF.read_block_header(io, Int64(0); validate_checksum = true)
     end
 end
 
