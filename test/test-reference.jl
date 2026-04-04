@@ -11,30 +11,43 @@ function test_fields(af1, af2)
     end
 end
 
-function roundtrip(fpath)
-    af = ASDF.load_file(fpath; extensions = false, validate_checksum = true)
+function roundtrip(fpath; extensions = false, validate_checksum = true)
+    af = ASDF.load_file(fpath; extensions, validate_checksum)
     fpath_roundtrip = replace(fpath, ".asdf" => "_roundtrip.asdf")
     ASDF.write_file(fpath_roundtrip, af.metadata)
-    af_roundtrip = ASDF.load_file(fpath_roundtrip; extensions = false, validate_checksum = true)
+    af_roundtrip = ASDF.load_file(fpath_roundtrip; extensions, validate_checksum)
     return af_roundtrip, af
 end
 
 function test_references(references)
     for reference in references
         @testset "$(reference)" begin
-            af_roundtrip, af = roundtrip(joinpath("data", reference * ".asdf"))
+            af_roundtrip, af = if reference == "compressed"
+                    # Bug on Python side, see 03 Apr ASDF office hour discussion
+                    roundtrip(joinpath("data", "asdf-1.6.0", reference * ".asdf"); validate_checksum = false)
+                else
+                    roundtrip(joinpath("data", "asdf-1.6.0", reference * ".asdf"))
+                end
             test_fields(af_roundtrip, af)
         end
     end
 end
 
-function yea()
-    references = [
-        "anchor",
-        "ascii",
-        "basic",
-        "complex",
-    ]
-
-    test_references(references)
-end
+references = [
+    "anchor",
+    "ascii",
+    "basic",
+    "complex",
+    "compressed",
+    "endian",
+    #"exploded", See https://github.com/JuliaAstro/ASDF.jl/issues/31
+    "float",
+    "int",
+    "scalars",
+    "shared",
+    #"stream", See https://github.com/JuliaAstro/ASDF.jl/issues/31
+    "structured",
+    "unicode_bmp",
+    "unicode_spp",
+]
+test_references(references)

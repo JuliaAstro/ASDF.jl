@@ -1,5 +1,5 @@
 @testset "Read ASDF file" begin
-    asdf = ASDF.load_file("blue_upchan_gain.00000000.asdf")
+    asdf = ASDF.load_file(joinpath("data", "blue_upchan_gain.00000000.asdf"))
     println(YAML.write(asdf.metadata))
 
     map_tree(output, asdf.metadata)
