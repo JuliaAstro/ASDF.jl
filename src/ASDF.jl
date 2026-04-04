@@ -348,6 +348,43 @@ Base.show(io::IO, datatype::Datatype) = show(io, string(datatype))
 Base.Type(datatype::Datatype) = datatype_type_dict[datatype]
 Datatype(type::Type) = type_datatype_dict[type]
 
+################################################################################
+
+struct AsciiDatatype
+    length::Int  # Bytes (1 per char)
+end
+
+struct Ucs4Datatype
+    length::Int  # Characters (4 bytes each)
+end
+
+Base.Type(dt::AsciiDatatype) = NTuple{dt.length, UInt8}
+Base.Type(dt::Ucs4Datatype)  = NTuple{dt.length, UInt32}
+
+################################################################################
+
+"""
+The other variant of [Datatype](@ref).
+"""
+struct StructuredField
+    name::String
+    datatype::Union{Datatype, AsciiDatatype, Ucs4Datatype}
+    byteorder::Byteorder
+    #shape::Vector{Int64}
+end
+
+struct StructuredDatatype
+    fields::Vector{StructuredField}
+end
+
+function Base.Type(sd::StructuredDatatype)
+    names = Tuple(Symbol(f.name) for f in sd.fields)
+    types = Tuple{(Type(f.datatype) for f in sd.fields)...}
+    return NamedTuple{names, types}
+end
+
+################################################################################
+
 # For parsing raw YAML
 function parse_asdf_datatype(val::AbstractString)
     return Datatype(val)
@@ -376,41 +413,6 @@ end
 
 ################################################################################
 
-"""
-The other variant of [Datatype](@ref).
-"""
-struct StructuredField
-    name::String
-    datatype::{Datatype, AsciiDatatype, Ucs4Datatype}
-    byteorder::Byteorder
-    #shape::Vector{Int64}
-end
-
-struct StructuredDatatype
-    fields::Vector{StructuredField}
-end
-
-function Base.Type(sd::StructuredDatatype)
-    names = Tuple(Symbol(f.name) for f in sd.fields)
-    types = Tuple{(Type(f.datatype) for f in sd.fields)...}
-    return NamedTuple{names, types}
-end
-
-################################################################################
-
-struct AsciiDatatype
-    length::Int  # Bytes (1 per char)
-end
-
-struct Ucs4Datatype
-    length::Int  # Characters (4 bytes each)
-end
-
-Base.Type(dt::AsciiDatatype) = NTuple{dt.length, UInt8}
-Base.Type(dt::Ucs4Datatype)  = NTuple{dt.length, UInt32}
-
-################################################################################
-
 struct NDArray
     lazy_block_headers::LazyBlockHeaders
 
@@ -428,7 +430,7 @@ struct NDArray
         source::Union{Nothing,Int64,AbstractString},
         data::Union{Nothing,AbstractArray},
         shape::Vector{Int64},
-        datatype::Union{Datatype,StructuredDatatype,AsciiDatatype,Ucs4Datatype}
+        datatype::Union{Datatype,StructuredDatatype,AsciiDatatype,Ucs4Datatype},
         byteorder::Byteorder,
         offset::Int64,
         strides::Vector{Int64},
@@ -558,16 +560,15 @@ function Base.getindex(ndarray::NDArray)
                     NT(swapped)
                 end
             end
+        elseif ndarray.datatype isa AsciiDatatype
+            # AsciiDatatype: no byteswap needed (single bytes have no endianness)
         elseif ndarray.datatype isa Ucs4Datatype
             if ndarray.byteorder != host_byteorder
                 data = map(elem -> map(bswap, elem), data)
             end
         else
-            if ndarray.byteorder != host_byteorder
-                map!(bswap, data, data)
-            end
+            error("Unhandled datatype type: $(typeof(ndarray.datatype))")
         end
-        # AsciiDatatype: no byteswap needed (single bytes have no endianness)
     else
         # Caught in the constructor for `NDArray`. This branch would imply that
         # `ndarray` is in invalid state; neither `source` nor `data` is given.
