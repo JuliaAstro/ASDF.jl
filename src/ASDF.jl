@@ -551,11 +551,20 @@ function Base.getindex(ndarray::NDArray)
                 map!(bswap, data, data)
             end
         elseif ndarray.datatype isa StructuredDatatype
-            needs_swap = any(f.byteorder != host_byteorder for f in ndarray.datatype.fields)
+            needs_swap = any(
+                !(f.datatype isa AsciiDatatype) && f.byteorder != host_byteorder
+                for f in ndarray.datatype.fields
+            )
             if needs_swap
                 data = map(data) do elem
                     swapped = map(ndarray.datatype.fields, Tuple(elem)) do field, val
-                        field.byteorder != host_byteorder ? bswap(val) : val
+                        if field.datatype isa AsciiDatatype
+                            val  # bytes have no endianness
+                        elseif field.byteorder != host_byteorder
+                            bswap(val)
+                        else
+                            val
+                        end
                     end
                     NT(swapped)
                 end
@@ -618,7 +627,7 @@ end
 
 struct ChunkedNDArray
     shape::Vector{Int64}
-    datatype::Datatype
+    datatype::Union{Datatype, StructuredDatatype, AsciiDatatype, Ucs4Datatype}
     chunks::AbstractVector{NDArrayChunk}
 
     function ChunkedNDArray(shape::Vector{Int64}, datatype::Datatype, chunks::Vector{NDArrayChunk})
@@ -645,9 +654,9 @@ struct ChunkedNDArray
 end
 
 function ChunkedNDArray(
-    shape::AbstractVector{<:Integer}, datatype::Union{Datatype,AbstractString}, chunks::AbstractVector{NDArrayChunk}
+    shape::AbstractVector{<:Integer}, datatype::Union{Datatype,StructuredDatatype,AsciiDatatype,Ucs4Datatype,AbstractString,AbstractVector}, chunks::AbstractVector{NDArrayChunk}
 )
-    if datatype isa AbstractString
+    if datatype isa AbstractString || datatype isa AbstractVector
         datatype = Datatype(datatype)
     end
     return ChunkedNDArray(Vector{Int64}(shape), datatype, chunks)
@@ -657,7 +666,7 @@ function make_construct_yaml_chunked_ndarray(block_headers::LazyBlockHeaders)
     function construct_yaml_chunked_ndarray(constructor::YAML.Constructor, node::YAML.Node)
         mapping = YAML.construct_mapping(constructor, node)
         shape = mapping["shape"]::AbstractVector{<:Integer}
-        datatype = mapping["datatype"]::AbstractString
+        datatype = mapping["datatype"]
         chunks = mapping["chunks"]::AbstractVector{NDArrayChunk}
         return ChunkedNDArray(shape, datatype, chunks)
     end
