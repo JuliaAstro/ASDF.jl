@@ -278,6 +278,8 @@ const host_byteorder = reinterpret(UInt8, UInt16[1])[1] == 1 ? Byteorder_little 
 
 """
 Careful, there is also `Base.DataType`, which is a different type.
+
+[Specification](https://www.asdf-format.org/projects/asdf-standard/en/latest/generated/stsci.edu/asdf/core/datatype-1.0.0.html).
 """
 @enum Datatype begin
     Datatype_bool8
@@ -348,13 +350,50 @@ Datatype(type::Type) = type_datatype_dict[type]
 
 ################################################################################
 
+"""
+The other variant of [Datatype](@ref).
+"""
+struct StructuredField
+    name::String
+    datatype::Datatype
+    byteorder::Byteorder
+    #shape::Vector{Int64}
+end
+
+struct StructuredDatatype
+    fields::Vector{StructuredField}
+end
+
+function Base.Type(sd::StructuredDatatype)
+    names = Tuple(Symbol(f.name) for f in sd.fields)
+    types = Tuple{(Type(f.datatype) for f in sd.fields)...}
+    return NamedTuple{names, types}
+end
+
+# For parsing raw YAML
+function parse_asdf_datatype(val::AbstractString)::Union{Datatype, StructuredDatatype}
+    return Datatype(val)
+end
+
+function parse_asdf_datatype(val::AbstractVector)::Union{Datatype, StructuredDatatype}
+    fields = map(val) do d
+        name = d["name"]::String
+        dt = Datatype(d["datatype"]::String)
+        bo = haskey(d, "byteorder") ? Byteorder(d["byteorder"]::String) : host_byteorder
+        StructuredField(name, dt, bo)
+    end
+    return StructuredDatatype(fields)
+end
+
+################################################################################
+
 struct NDArray
     lazy_block_headers::LazyBlockHeaders
 
     source::Union{Nothing,Int64,AbstractString}
     data::Union{Nothing,AbstractArray}
     shape::Vector{Int64}
-    datatype::Datatype
+    datatype::Union{Datatype,StructuredDatatype}
     byteorder::Byteorder
     offset::Int64
     strides::Vector{Int64} # stored in ASDF (Python/C) order, not in Julia (Fortran) order
@@ -365,7 +404,7 @@ struct NDArray
         source::Union{Nothing,Int64,AbstractString},
         data::Union{Nothing,AbstractArray},
         shape::Vector{Int64},
-        datatype::Datatype,
+        datatype::Union{Datatype,StructuredDatatype},
         byteorder::Byteorder,
         offset::Int64,
         strides::Vector{Int64},
@@ -405,7 +444,7 @@ function NDArray(
     source::Union{Nothing,Integer},
     data::Union{Nothing,AbstractArray},
     shape::AbstractVector{<:Integer},
-    datatype::Union{Datatype,AbstractString},
+    datatype::Union{Datatype,StructuredDatatype,AbstractString,AbstractVector},
     byteorder::Union{Nothing,Byteorder,AbstractString},
     offset::Union{Nothing,Integer}=0,
     strides::Union{Nothing,<:AbstractVector{<:Integer}}=nothing,
@@ -413,8 +452,8 @@ function NDArray(
     if source isa Integer
         source = Int64(source)
     end
-    if datatype isa AbstractString
-        datatype = Datatype(datatype)
+    if datatype isa AbstractString || datatype isa AbstractVector
+        datatype = parse_asdf_datatype(datatype)
     end
     if data !== nothing
         # Convert arrays of arrays into multi-dimensional arrays
@@ -447,7 +486,7 @@ function make_construct_yaml_ndarray(block_headers::LazyBlockHeaders)
         source = get(mapping, "source", nothing)::Union{Nothing,Integer}
         data = get(mapping, "data", nothing)::Union{Nothing,AbstractVector}
         shape = mapping["shape"]::AbstractVector{<:Integer}
-        datatype = mapping["datatype"]::AbstractString
+        datatype = mapping["datatype"] # No annotation needed, `parse_asdf_datatype` handles dispatch
         byteorder = get(mapping, "byteorder", nothing)::Union{Nothing,AbstractString}
         offset = get(mapping, "offset", nothing)::Union{Nothing,Integer}
         strides = get(mapping, "strides", nothing)::Union{Nothing,AbstractVector{<:Integer}}
@@ -475,13 +514,26 @@ function Base.getindex(ndarray::NDArray)
         strides = (1, reverse(ndarray.strides)...)
         data = StridedView(data, Int.(shape), Int.(strides), Int(ndarray.offset))
         # Impose datatype
-        data = reinterpret(Type(ndarray.datatype), data)
+        NT = Type(ndarray.datatype)
+        data = reinterpret(NT, data)
         # Remove the new dimension again
         data = reshape(data, shape[2:end])
         # Correct byteorder if necessary.
         # Do this after imposing the datatype since byteorder depends on the datatype.
-        if ndarray.byteorder != host_byteorder
-            map!(bswap, data, data)
+        if ndarray.datatype isa StructuredDatatype
+            needs_swap = any(f.byteorder != host_byteorder for f in ndarray.datatype.fields)
+            if needs_swap
+                data = map(data) do elem
+                    swapped = map(ndarray.datatype.fields, Tuple(elem)) do field, val
+                        field.byteorder != host_byteorder ? bswap(val) : val
+                    end
+                    NT(swapped)
+                end
+            end
+        else
+            if ndarray.byteorder != host_byteorder
+                map!(bswap, data, data)
+            end
         end
     else
         # Caught in the constructor for `NDArray`. This branch would imply that
