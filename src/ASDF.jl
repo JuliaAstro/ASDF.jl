@@ -348,6 +348,8 @@ Base.show(io::IO, datatype::Datatype) = show(io, string(datatype))
 Base.Type(datatype::Datatype) = datatype_type_dict[datatype]
 Datatype(type::Type) = type_datatype_dict[type]
 
+asdf_datatype_yaml(dt::Datatype) = string(dt)  # "float32", "uint8", etc.
+
 ################################################################################
 
 struct AsciiDatatype
@@ -360,6 +362,9 @@ end
 
 Base.Type(dt::AsciiDatatype) = NTuple{dt.length, UInt8}
 Base.Type(dt::Ucs4Datatype)  = NTuple{dt.length, UInt32}
+
+asdf_datatype_yaml(dt::AsciiDatatype) = ["ascii", dt.length]
+asdf_datatype_yaml(dt::Ucs4Datatype) = ["ucs4", dt.length]
 
 ################################################################################
 
@@ -381,6 +386,13 @@ function Base.Type(sd::StructuredDatatype)
     names = Tuple(Symbol(f.name) for f in sd.fields)
     types = Tuple{(Type(f.datatype) for f in sd.fields)...}
     return NamedTuple{names, types}
+end
+
+function asdf_datatype_yaml(dt::StructuredDatatype)
+    return map(dt.fields) do f
+        # To-do: replace with OrderedDict after https://github.com/JuliaAstro/ASDF.jl/pull/26
+        Dict("name" => f.name, "datatype" => asdf_datatype_yaml(f.datatype), "byteorder" => string(f.byteorder))
+    end
 end
 
 ################################################################################
@@ -594,6 +606,11 @@ function Base.getindex(ndarray::NDArray)
     return data::AbstractArray
 end
 
+function YAML._print(io::IO, val::NDArray, level::Int = 0, ignore_level::Bool = false)
+    # TODO: Get compression from underlying header block?
+    YAML._print(io, NDArrayWrapper(val[]; compression = C_None), level, ignore_level)
+end
+
 ################################################################################
 
 struct NDArrayChunk
@@ -778,7 +795,23 @@ Base.isempty(blocks::Blocks) = isempty(blocks.arrays) && isempty(blocks.position
 # This means that `write_file` is not thread-safe.
 const blocks::Blocks = Blocks()
 
+function infer_asdf_datatype(T::Type)::Union{Datatype, AsciiDatatype, Ucs4Datatype, StructuredDatatype}
+    if T <: NTuple{N, UInt8} where N
+        return AsciiDatatype(fieldcount(T))
+    elseif T <: NTuple{N, UInt32} where N
+        return Ucs4Datatype(fieldcount(T))
+    elseif T <: NamedTuple
+        fields = map(fieldnames(T), fieldtypes(T)) do name, FT
+            StructuredField(string(name), infer_asdf_datatype(FT), host_byteorder)
+        end
+        return StructuredDatatype(collect(fields))
+    else
+        return Datatype(T)  # existing dict lookup, errors on unknown types
+    end
+end
+
 function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bool=false)
+    datatype = infer_asdf_datatype(eltype(val.array))
     if val.inline
         data = val.array
         # Split multidimensional arrays into array-of-arrays
@@ -786,7 +819,7 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bo
         ndarray = Dict(
             :data => data,
             :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
-            :datatype => string(Datatype(eltype(val.array))),
+            :datatype => asdf_datatype_yaml(datatype),#string(Datatype(eltype(val.array))),
             # :offset => 0::Integer,
             # :strides => ::Vector{Int64},
         )
@@ -798,7 +831,7 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bo
         ndarray = Dict(
             :source => source::Integer,
             :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
-            :datatype => string(Datatype(eltype(val.array))),
+            :datatype => asdf_datatype_yaml(datatype),
             :byteorder => string(host_byteorder::Byteorder),
             # :offset => 0::Integer,
             # :strides => ::Vector{Int64},
@@ -890,7 +923,6 @@ function write_file(filename::AbstractString, document::Dict{Any,Any})
         header_size = 48
         flags = 0               # not streamed
         compression = compression_keys[array.compression]
-        data_size = sizeof(array.array)
 
         # Write block
         # TODO: create function write_block
@@ -902,6 +934,8 @@ function write_file(filename::AbstractString, document::Dict{Any,Any})
         input = reshape(input, :)
         # Reinterpret as UInt8
         input = reinterpret(UInt8, input)
+
+        data_size = UInt64(length(input))
 
         # TODO: Write directly to file
         if array.compression == C_None
