@@ -348,6 +348,32 @@ Base.show(io::IO, datatype::Datatype) = show(io, string(datatype))
 Base.Type(datatype::Datatype) = datatype_type_dict[datatype]
 Datatype(type::Type) = type_datatype_dict[type]
 
+# For parsing raw YAML
+function parse_asdf_datatype(val::AbstractString)
+    return Datatype(val)
+end
+
+function parse_asdf_datatype(val::AbstractVector)
+    # 2-element [kind, length] form: ["ascii", 4] or ["ucs4", 4]
+    if length(val) == 2 && val[1] isa AbstractString && val[2] isa Integer
+        n = Int(val[2])
+        if val[1] == "ascii"
+            return AsciiDatatype(n)
+        elseif val[1] == "ucs4"
+            return Ucs4Datatype(n)
+        else
+            error("Unknown string datatype kind: $(val[1])")
+        end
+    end
+    fields = map(val) do d
+        name = d["name"]::String
+        dt = parse_asdf_datatype(d["datatype"])
+        bo = haskey(d, "byteorder") ? Byteorder(d["byteorder"]::String) : host_byteorder
+        StructuredField(name, dt, bo)
+    end
+    return StructuredDatatype(fields)
+end
+
 ################################################################################
 
 """
@@ -355,7 +381,7 @@ The other variant of [Datatype](@ref).
 """
 struct StructuredField
     name::String
-    datatype::Datatype
+    datatype::{Datatype, AsciiDatatype, Ucs4Datatype}
     byteorder::Byteorder
     #shape::Vector{Int64}
 end
@@ -370,20 +396,18 @@ function Base.Type(sd::StructuredDatatype)
     return NamedTuple{names, types}
 end
 
-# For parsing raw YAML
-function parse_asdf_datatype(val::AbstractString)::Union{Datatype, StructuredDatatype}
-    return Datatype(val)
+################################################################################
+
+struct AsciiDatatype
+    length::Int  # Bytes (1 per char)
 end
 
-function parse_asdf_datatype(val::AbstractVector)::Union{Datatype, StructuredDatatype}
-    fields = map(val) do d
-        name = d["name"]::String
-        dt = Datatype(d["datatype"]::String)
-        bo = haskey(d, "byteorder") ? Byteorder(d["byteorder"]::String) : host_byteorder
-        StructuredField(name, dt, bo)
-    end
-    return StructuredDatatype(fields)
+struct Ucs4Datatype
+    length::Int  # Characters (4 bytes each)
 end
+
+Base.Type(dt::AsciiDatatype) = NTuple{dt.length, UInt8}
+Base.Type(dt::Ucs4Datatype)  = NTuple{dt.length, UInt32}
 
 ################################################################################
 
@@ -393,7 +417,7 @@ struct NDArray
     source::Union{Nothing,Int64,AbstractString}
     data::Union{Nothing,AbstractArray}
     shape::Vector{Int64}
-    datatype::Union{Datatype,StructuredDatatype}
+    datatype::Union{Datatype,StructuredDatatype,AsciiDatatype,Ucs4Datatype}
     byteorder::Byteorder
     offset::Int64
     strides::Vector{Int64} # stored in ASDF (Python/C) order, not in Julia (Fortran) order
@@ -404,7 +428,7 @@ struct NDArray
         source::Union{Nothing,Int64,AbstractString},
         data::Union{Nothing,AbstractArray},
         shape::Vector{Int64},
-        datatype::Union{Datatype,StructuredDatatype},
+        datatype::Union{Datatype,StructuredDatatype,AsciiDatatype,Ucs4Datatype}
         byteorder::Byteorder,
         offset::Int64,
         strides::Vector{Int64},
@@ -444,7 +468,7 @@ function NDArray(
     source::Union{Nothing,Integer},
     data::Union{Nothing,AbstractArray},
     shape::AbstractVector{<:Integer},
-    datatype::Union{Datatype,StructuredDatatype,AbstractString,AbstractVector},
+    datatype::Union{Datatype,StructuredDatatype,AsciiDatatype,Ucs4Datatype,AbstractString,AbstractVector},
     byteorder::Union{Nothing,Byteorder,AbstractString},
     offset::Union{Nothing,Integer}=0,
     strides::Union{Nothing,<:AbstractVector{<:Integer}}=nothing,
@@ -520,7 +544,11 @@ function Base.getindex(ndarray::NDArray)
         data = reshape(data, shape[2:end])
         # Correct byteorder if necessary.
         # Do this after imposing the datatype since byteorder depends on the datatype.
-        if ndarray.datatype isa StructuredDatatype
+        if ndarray.datatype isa Datatype
+            if ndarray.byteorder != host_byteorder
+                map!(bswap, data, data)
+            end
+        elseif ndarray.datatype isa StructuredDatatype
             needs_swap = any(f.byteorder != host_byteorder for f in ndarray.datatype.fields)
             if needs_swap
                 data = map(data) do elem
@@ -530,11 +558,16 @@ function Base.getindex(ndarray::NDArray)
                     NT(swapped)
                 end
             end
+        elseif ndarray.datatype isa Ucs4Datatype
+            if ndarray.byteorder != host_byteorder
+                data = map(elem -> map(bswap, elem), data)
+            end
         else
             if ndarray.byteorder != host_byteorder
                 map!(bswap, data, data)
             end
         end
+        # AsciiDatatype: no byteswap needed (single bytes have no endianness)
     else
         # Caught in the constructor for `NDArray`. This branch would imply that
         # `ndarray` is in invalid state; neither `source` nor `data` is given.
