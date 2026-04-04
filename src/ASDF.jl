@@ -352,16 +352,59 @@ asdf_datatype_yaml(dt::Datatype) = string(dt)  # "float32", "uint8", etc.
 
 ################################################################################
 
+"""
+    AsciiDatatype(length::Int)
+
+An ASDF fixed-length ASCII string datatype, corresponding to the `["ascii", N]` form in
+the ASDF datatype spec. Each element occupies exactly `length` bytes, one byte per
+character (all codepoints < 128).
+
+The corresponding Julia type is `NTuple{N, UInt8}`. Byte order is irrelevant for this
+type since each character is a single byte.
+
+See also: [`Ucs4Datatype`](@ref), [`parse_asdf_datatype`](@ref).
+"""
 struct AsciiDatatype
     length::Int  # Bytes (1 per char)
 end
 
+"""
+    Ucs4Datatype(length::Int)
+
+An ASDF fixed-length UCS-4 string datatype, corresponding to the `["ucs4", N]` form in
+the ASDF datatype spec. Each element occupies exactly `4 * length` bytes, with each
+character encoded as a 4-byte UInt32 in the array's declared byte order.
+
+The corresponding Julia type is `NTuple{N, UInt32}`.
+
+See also: [`AsciiDatatype`](@ref), [`parse_asdf_datatype`](@ref).
+"""
 struct Ucs4Datatype
     length::Int  # Characters (4 bytes each)
 end
 
+"""
+    Base.Type(dt::AsciiDatatype) -> NTuple{N, UInt8}
+
+Return the Julia `isbitstype` corresponding to an ASDF string datatype, suitable for use
+with `reinterpret` and `sizeof`. `N` is the number of characters (`dt.length`).
+"""
 Base.Type(dt::AsciiDatatype) = NTuple{dt.length, UInt8}
+
+"""
+    Base.Type(dt::Ucs4Datatype)  -> NTuple{N, UInt32}
+
+Return the Julia `isbitstype` corresponding to an ASDF string datatype, suitable for use
+with `reinterpret` and `sizeof`. `N` is the number of characters (`dt.length`).
+"""
 Base.Type(dt::Ucs4Datatype)  = NTuple{dt.length, UInt32}
+
+"""
+    asdf_datatype_yaml(dt) -> Union{String, Vector}
+
+Serialize an ASDF datatype to its YAML-representable form.
+"""
+asdf_datatype_yaml
 
 asdf_datatype_yaml(dt::AsciiDatatype) = ["ascii", dt.length]
 asdf_datatype_yaml(dt::Ucs4Datatype) = ["ucs4", dt.length]
@@ -369,19 +412,60 @@ asdf_datatype_yaml(dt::Ucs4Datatype) = ["ucs4", dt.length]
 ################################################################################
 
 """
-The other variant of [Datatype](@ref).
+    StructuredField(name::String, datatype::Union{Datatype,AsciiDatatype,Ucs4Datatype}, byteorder::Byteorder)
+
+A single named field within a [`StructuredDatatype`](@ref). Corresponds to one entry in the ASDF `datatype` list when it takes the dict form:
+
+```yaml
+- {name: x, datatype: float32, byteorder: little}
+- {name: label, datatype: [ascii, 8], byteorder: little}
+```
+
+`byteorder` specifies the byte order for this field specifically, overriding the ndarray's top-level `byteorder`. For [`AsciiDatatype`](@ref) fields, `byteorder` is stored but
+ignored during byte-swapping since single bytes have no endianness.
 """
 struct StructuredField
     name::String
     datatype::Union{Datatype, AsciiDatatype, Ucs4Datatype}
     byteorder::Byteorder
-    #shape::Vector{Int64}
 end
 
+"""
+    StructuredDatatype(fields::Vector{StructuredField})
+
+An ASDF compound datatype consisting of named fields, corresponding to the list-of-dicts form of the `datatype` key in an ndarray:
+
+```yaml
+datatype:
+- {name: x,      datatype: float32, byteorder: little}
+- {name: y,      datatype: float32, byteorder: little}
+- {name: label,  datatype: [ascii, 4], byteorder: little}
+```
+
+The corresponding Julia type (returned by `Base.Type`) is a `NamedTuple` with one field per entry, e.g., `@NamedTuple{x::Float32, y::Float32, label::NTuple{4,UInt8}}`. This type is `isbitstype`, so `reinterpret`, `sizeof`, and `bswap` all work correctly on it.
+
+See also: [`StructuredField`](@ref), [`parse_asdf_datatype`](@ref).
+"""
 struct StructuredDatatype
     fields::Vector{StructuredField}
 end
 
+"""
+    Base.Type(sd::StructuredDatatype) -> NamedTuple type
+
+Return the `NamedTuple` type corresponding to a structured ASDF datatype. Field names and types are derived from `sd.fields` in order.
+
+# Example
+
+```
+sd = StructuredDatatype([
+    StructuredField("x",     Datatype_float32,  Byteorder_little),
+    StructuredField("label", AsciiDatatype(4),  Byteorder_little),
+])
+
+Base.Type(sd) == @NamedTuple{x::Float32, label::NTuple{4,UInt8}}
+```
+"""
 function Base.Type(sd::StructuredDatatype)
     names = Tuple(Symbol(f.name) for f in sd.fields)
     types = Tuple{(Type(f.datatype) for f in sd.fields)...}
@@ -397,10 +481,22 @@ end
 
 ################################################################################
 
-# For parsing raw YAML
-function parse_asdf_datatype(val::AbstractString)
-    return Datatype(val)
-end
+"""
+    parse_asdf_datatype(val) -> Union{Datatype, AsciiDatatype, Ucs4Datatype, StructuredDatatype}
+
+Parse a raw YAML datatype value into its corresponding ASDF datatype:
+
+- `AbstractString` (e.g. `"float32"`) --> [`Datatype`](@ref)
+- 2-element `AbstractVector` (e.g. `["ascii", 4]`) --> [`AsciiDatatype`](@ref) or [`Ucs4Datatype`](@ref)
+- `AbstractVector` of dicts --> [`StructuredDatatype`](@ref)
+
+Field-level `datatype` values within a structured dtype are parsed recursively, so `["ascii", N]` is valid as a field type.
+
+This is the inverse of [`asdf_datatype_yaml`](@ref).
+"""
+parse_asdf_datatype
+
+parse_asdf_datatype(val::AbstractString) = Datatype(val)
 
 function parse_asdf_datatype(val::AbstractVector)
     # 2-element [kind, length] form: ["ascii", 4] or ["ucs4", 4]
@@ -795,6 +891,20 @@ Base.isempty(blocks::Blocks) = isempty(blocks.arrays) && isempty(blocks.position
 # This means that `write_file` is not thread-safe.
 const blocks::Blocks = Blocks()
 
+"""
+    infer_asdf_datatype(T::Type) --> Union{Datatype, AsciiDatatype, Ucs4Datatype, StructuredDatatype}
+
+Infer the ASDF datatype from a Julia element type, used when writing arrays:
+
+- `NTuple{N, UInt8}` --> [`AsciiDatatype(N)`](@ref AsciiDatatype)
+- `NTuple{N, UInt32}` --> [`Ucs4Datatype(N)`](@ref Ucs4Datatype)
+- `NamedTuple` --> [`StructuredDatatype`](@ref) with fields inferred recursively
+- Any other type --> [`Datatype`](@ref) via the existing `type_datatype_dict` lookup
+
+Errors if `T` is not representable as an ASDF datatype.
+
+See also: [`asdf_datatype_yaml`](@ref).
+"""
 function infer_asdf_datatype(T::Type)::Union{Datatype, AsciiDatatype, Ucs4Datatype, StructuredDatatype}
     if T <: NTuple{N, UInt8} where N
         return AsciiDatatype(fieldcount(T))
