@@ -2,8 +2,6 @@ using ASDF
 using Documenter
 using Documenter.Remotes: GitHub
 
-DocMeta.setdocmeta!(ASDF, :DocTestSetup, :(using ASDF); recursive = true)
-
 makedocs(;
     modules = [ASDF],
     authors = "Erik Schnetter",
@@ -21,6 +19,7 @@ makedocs(;
     ],
         "API" => "api.md",
     ],
+    doctest = false,
 )
 
 deploydocs(;
