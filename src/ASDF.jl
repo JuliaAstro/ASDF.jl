@@ -841,7 +841,7 @@ Display up to `max_rows` lines of `af` tree. `Base.show` calls this function int
 ```jldoctest
 julia> using OrderedCollections: OrderedDict
 
-julia> doc = OrderedDict("field_\$(i)" => rand(10) for i in 1:25);
+julia> doc = OrderedDict(string("field_", i) => rand(10) for i in 1:25);
 
 julia> save("long.asdf", doc)
 
@@ -996,7 +996,7 @@ Load an asdf file at filepath `f`.
 ```jldoctest
 julia> using OrderedCollections: OrderedDict
 
-julia> doc = OrderedDict("field_\$(i)" => rand(10) for i in 1:5); # Create some sample data
+julia> doc = OrderedDict(string("field_", i) => rand(10) for i in 1:5); # Create some sample data
 
 julia> save("myfile.asdf", doc)
 
@@ -1014,8 +1014,8 @@ myfile.asdf
    └─ version::String | 2.0.0
 ```
 """
-function fileio_load(f::File{format"ASDF"})
-    return load_file(f.filename)
+function fileio_load(f::File{format"ASDF"}; kwargs...)
+    return load_file(f.filename; kwargs...)
 end
 
 @doc (@doc fileio_load) load
@@ -1336,7 +1336,7 @@ Save `data` to an asdf file at filepath `f`.
 ```jldoctest
 julia> using OrderedCollections: OrderedDict
 
-julia> data = OrderedDict("field_\$(i)" => rand(10) for i in 1:5); # Create some sample data
+julia> data = OrderedDict(string("field_", i) => rand(10) for i in 1:5); # Create some sample data
 
 julia> save("myfile.asdf", data)
 ```
