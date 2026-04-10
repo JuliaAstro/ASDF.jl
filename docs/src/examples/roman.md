@@ -9,10 +9,12 @@ In this example, we show how to use ASDF.jl to load and view some simulated astr
 
 ## Load
 
-```@example roman
-data_dir = joinpath("..", "..", "data")
-mkpath(data_dir)
-fpath = joinpath(data_dir, "roman.asdf")
+```@repl roman
+fpath = let
+    data_dir = joinpath("..", "..", "data")
+    mkpath(data_dir)
+    joinpath(data_dir, "roman.asdf")
+end;
 
 if !isfile(fpath)
     using AWSS3, AWS
@@ -29,12 +31,10 @@ if !isfile(fpath)
 end
 ```
 
-```@example roman
+```@repl roman
 using ASDF
 
-af = ASDF.load_file(fpath; extensions = true, validate_checksum = false)
-
-af.metadata["roman"]
+af = load(fpath; extensions = true, validate_checksum = false)
 ```
 
 ## Plot
@@ -42,13 +42,13 @@ af.metadata["roman"]
 ```@example roman
 using CairoMakie
 
-img = af.metadata["roman"]["data"][]
+img = af["roman"]["data"][]
 
-let
-    fig, ax, hm = heatmap(img[begin:1000, begin:1000]; colorscale = asinh, colorrange = (0.5, 4))
-    Colorbar(fig[1, 2], hm)
-    fig
-end
+fig, ax, hm = heatmap(img[begin:1000, begin:1000]; colorscale = asinh, colorrange = (0.5, 4))
+
+Colorbar(fig[1, 2], hm)
+
+fig
 ```
 
 !!! note

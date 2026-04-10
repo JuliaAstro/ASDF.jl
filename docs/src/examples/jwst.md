@@ -9,11 +9,13 @@ In this example, we show how to use ASDF.jl to load and view some astronomical d
 
 ## Load
 
-```@example jwst
+```@repl jwst
 
-data_dir = joinpath("..", "..", "data")
-mkpath(data_dir)
-fpath = joinpath(data_dir, "jwst.asdf")
+fpath = let
+    data_dir = joinpath("..", "..", "data")
+    mkpath(data_dir)
+    joinpath(data_dir, "jwst.asdf")
+end;
 
 if !isfile(fpath)
     using Downloads: download
@@ -22,12 +24,10 @@ if !isfile(fpath)
 end
 ```
 
-```@example jwst
+```@repl jwst
 using ASDF
 
-af = ASDF.load_file(fpath; extensions = true)
-
-af.metadata
+af = load(fpath; extensions = true)
 ```
 
 ## Plot
@@ -36,7 +36,7 @@ af.metadata
 using CairoMakie
 
 img_sci = let
-    img = af.metadata["data"][]
+    img = af["data"][]
     img[img .< 0] .= 1
     img
 end

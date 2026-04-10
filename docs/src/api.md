@@ -2,10 +2,13 @@
 
 ## Public
 
-!!! todo
-    `load` / `save` from FileIO.jl. [#26](https://github.com/JuliaAstro/ASDF.jl/pull/26)
+```@autodocs
+Modules = [ASDF]
+Private = false
+```
 
 ## Private
 ```@autodocs
 Modules = [ASDF]
+Public = false
 ```
