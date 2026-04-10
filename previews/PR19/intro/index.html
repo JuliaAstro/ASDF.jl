@@ -1,16 +1,120 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Introduction · ASDF.jl</title><meta name="title" content="Introduction · ASDF.jl"/><meta property="og:title" content="Introduction · ASDF.jl"/><meta property="twitter:title" content="Introduction · ASDF.jl"/><meta name="description" content="Documentation for ASDF.jl."/><meta property="og:description" content="Documentation for ASDF.jl."/><meta property="twitter:description" content="Documentation for ASDF.jl."/><meta property="og:url" content="https://juliaastro.org/ASDF/stable/intro/"/><meta property="twitter:url" content="https://juliaastro.org/ASDF/stable/intro/"/><link rel="canonical" href="https://juliaastro.org/ASDF/stable/intro/"/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">ASDF.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../">Home</a></li><li class="is-active"><a class="tocitem" href>Introduction</a><ul class="internal"><li><a class="tocitem" href="#Getting-started"><span>Getting started</span></a></li><li><a class="tocitem" href="#Array-storage"><span>Array storage</span></a></li><li><a class="tocitem" href="#Tagged-objects"><span>Tagged objects</span></a></li></ul></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../examples/jwst/">JWST</a></li><li><a class="tocitem" href="../examples/roman/">Roman</a></li></ul></li><li><a class="tocitem" href="../api/">API</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Introduction</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Introduction</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/JuliaAstro/ASDF.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/JuliaAstro/ASDF.jl/blob/main/docs/src/intro.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Introduction"><a class="docs-heading-anchor" href="#Introduction">Introduction</a><a id="Introduction-1"></a><a class="docs-heading-anchor-permalink" href="#Introduction" title="Permalink"></a></h1><p><em>Adapted from <a href="https://github.com/asdf-format/asdf-adass2024/blob/main/03_creating_asdf_files/Creating_ASDF_Files.ipynb">ADASS 2024 workshop</a>.</em></p><p>The ASDF file format is based on the human-readable <a href="http://yaml.org/">YAML</a> standard, extended with efficient binary blocks to store array data. Basic arithmetic types (<code>Bool</code>, <code>Int</code>, <code>Float</code>, <code>Complex</code>) and <code>String</code> types are supported out of the box. Other types (structures) need to be declared to be supported.</p><p>ASDF supports arbitrary array strides, both C (Python) and Fortran (Julia) memory layouts, as well as compression. The YAML metadata can contain arbitrary information corresponding to scalars, arrays, or dictionaries.</p><p>The ASDF file format targets a similar audience as the <a href="https://www.hdfgroup.org/solutions/hdf5/">HDF5</a> format.</p><h2 id="Getting-started"><a class="docs-heading-anchor" href="#Getting-started">Getting started</a><a id="Getting-started-1"></a><a class="docs-heading-anchor-permalink" href="#Getting-started" title="Permalink"></a></h2><p>ASDF files are initially created as a nested dictionary with your specified keys:</p><pre><code class="language-julia hljs">af_payload = Dict{Any, Any}( # To-do: see if type signature needs to be this general
-    &quot;meta&quot; =&gt; Dict(&quot;my&quot; =&gt; Dict(&quot;nested&quot; =&gt; &quot;metadata&quot;)),
-    &quot;data&quot; =&gt; [1, 2, 3, 4],
-)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Dict{Any, Any} with 2 entries:
-  &quot;meta&quot; =&gt; Dict(&quot;my&quot;=&gt;Dict(&quot;nested&quot;=&gt;&quot;metadata&quot;))
-  &quot;data&quot; =&gt; [1, 2, 3, 4]</code></pre><p>Next, this dictionary can be written to the ASDF file format with <code>ASDF.write_file</code>:</p><pre><code class="language-julia hljs">using ASDF
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Introduction · ASDF.jl</title><meta name="title" content="Introduction · ASDF.jl"/><meta property="og:title" content="Introduction · ASDF.jl"/><meta property="twitter:title" content="Introduction · ASDF.jl"/><meta name="description" content="Documentation for ASDF.jl."/><meta property="og:description" content="Documentation for ASDF.jl."/><meta property="twitter:description" content="Documentation for ASDF.jl."/><meta property="og:url" content="https://juliaastro.org/ASDF/stable/intro/"/><meta property="twitter:url" content="https://juliaastro.org/ASDF/stable/intro/"/><link rel="canonical" href="https://juliaastro.org/ASDF/stable/intro/"/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">ASDF.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../">Home</a></li><li class="is-active"><a class="tocitem" href>Introduction</a><ul class="internal"><li><a class="tocitem" href="#Getting-started"><span>Getting started</span></a></li><li><a class="tocitem" href="#Array-storage"><span>Array storage</span></a></li><li><a class="tocitem" href="#Tagged-objects"><span>Tagged objects</span></a></li></ul></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../examples/jwst/">JWST</a></li><li><a class="tocitem" href="../examples/roman/">Roman</a></li></ul></li><li><a class="tocitem" href="../api/">API</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Introduction</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Introduction</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/JuliaAstro/ASDF.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/JuliaAstro/ASDF.jl/blob/main/docs/src/intro.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Introduction"><a class="docs-heading-anchor" href="#Introduction">Introduction</a><a id="Introduction-1"></a><a class="docs-heading-anchor-permalink" href="#Introduction" title="Permalink"></a></h1><p><em>Adapted from <a href="https://github.com/asdf-format/asdf-adass2024/blob/main/03_creating_asdf_files/Creating_ASDF_Files.ipynb">ADASS 2024 workshop</a>.</em></p><p>The ASDF file format is based on the human-readable <a href="http://yaml.org/">YAML</a> standard, extended with efficient binary blocks to store array data. Basic arithmetic types (<code>Bool</code>, <code>Int</code>, <code>Float</code>, <code>Complex</code>) and <code>String</code> types are supported out of the box. Other types (structures) need to be declared to be supported.</p><p>ASDF supports arbitrary array strides, both C (Python) and Fortran (Julia) memory layouts, as well as compression. The YAML metadata can contain arbitrary information corresponding to scalars, arrays, or dictionaries.</p><p>The ASDF file format targets a similar audience as the <a href="https://www.hdfgroup.org/solutions/hdf5/">HDF5</a> format.</p><h2 id="Getting-started"><a class="docs-heading-anchor" href="#Getting-started">Getting started</a><a id="Getting-started-1"></a><a class="docs-heading-anchor-permalink" href="#Getting-started" title="Permalink"></a></h2><p>ASDF files are initially created as a dictionary with arbitrarily nested data:</p><pre><code class="language-julia-repl hljs">julia&gt; using OrderedCollections
 
-data_dir = joinpath(&quot;..&quot;, &quot;data&quot;)
-mkpath(data_dir)
-fpath = joinpath(data_dir, &quot;my_file.asdf&quot;)
+julia&gt; af_payload = OrderedDict(&quot;field_1&quot; =&gt; [5, 6, 7, 8], &quot;field_2&quot; =&gt; [&quot;up&quot;, &quot;down&quot;, &quot;left&quot;, &quot;right&quot;], &quot;field_3&quot; =&gt; OrderedDict(&quot;field_3a&quot; =&gt; [&quot;apple&quot;, &quot;orange&quot;, &quot;pear&quot;], &quot;field_3b&quot; =&gt; [1.0, 2.0, 3.0]));</code></pre><div class="admonition is-info" id="Note-fc9849c731c490b0"><header class="admonition-header">Note<a class="admonition-anchor" href="#Note-fc9849c731c490b0" title="Permalink"></a></header><div class="admonition-body"><p>We use an <code>OrderedDict</code> from <a href="https://github.com/JuliaCollections/OrderedCollections.jl">OrderedCollections.jl</a> to preserve the order of data on write and load, and to maximize compatibility with YAML.jl. For a potential alternative using <a href="https://github.com/andyferris/Dictionaries.jl">Dictionaries.jl</a>, see this <a href="https://github.com/JuliaAstro/ASDF.jl/tree/dictionaries">experimental branch</a>.</p></div></div><p>ASDF.jl is registered with <a href="https://juliaio.github.io/FileIO.jl/stable/">FileIO.jl</a>, so this data can be written to the ASDF file format with the generic <a href="../api/#FileIO.save"><code>save</code></a> function:</p><pre><code class="language-julia-repl hljs">julia&gt; using ASDF
 
-ASDF.write_file(fpath, af_payload)</code></pre><p>which contains the following file contents:</p><pre><code class="language-yaml hljs">#ASDF 1.0.0
+julia&gt; save(&quot;intro.asdf&quot;, af_payload)</code></pre><p>The saved file contains the following human-readable contents:</p><details class="admonition is-details" id="View-file-e9b0fb1382904070"><summary class="admonition-header">View file<a class="admonition-anchor" href="#View-file-e9b0fb1382904070" title="Permalink"></a></summary><div class="admonition-body"><pre><code class="language-julia-repl hljs">julia&gt; read(&quot;intro.asdf&quot;, String) |&gt; print
+#ASDF 1.0.0
+#ASDF_STANDARD 1.2.0
+# This is an ASDF file &lt;https://asdf-standard.readthedocs.io/&gt;
+%YAML 1.1
+%TAG ! tag:stsci.edu:asdf/
+---
+!core/asdf-1.1.0
+field_1:
+  - 5
+  - 6
+  - 7
+  - 8
+field_2:
+  - &quot;up&quot;
+  - &quot;down&quot;
+  - &quot;left&quot;
+  - &quot;right&quot;
+field_3:
+  field_3a:
+    - &quot;apple&quot;
+    - &quot;orange&quot;
+    - &quot;pear&quot;
+  field_3b:
+    - 1.0
+    - 2.0
+    - 3.0
+asdf/library: !core/software-1.0.0
+  name: &quot;ASDF.jl&quot;
+  author: &quot;Erik Schnetter &lt;schnetter@gmail.com&gt;&quot;
+  homepage: &quot;https://github.com/JuliaAstro/ASDF.jl&quot;
+  version: &quot;2.0.0&quot;
+...
+#ASDF BLOCK INDEX
+%YAML 1.1
+---
+[]
+...</code></pre></div></details><p>which can be loaded back with FileIO.jl&#39;s generic <a href="../api/#FileIO.load"><code>load</code></a> function:</p><pre><code class="language-julia-repl hljs">julia&gt; af = load(&quot;intro.asdf&quot;)
+intro.asdf
+├─ field_1::Vector{Int64} | shape = (4,)
+├─ field_2::Vector{String} | shape = (4,)
+├─ field_3::String
+│  ├─ field_3a::Vector{String} | shape = (3,)
+│  └─ field_3b::Vector{Float64} | shape = (3,)
+└─ asdf/library::String
+   ├─ author::String | Erik Schnetter &lt;schnetter@gmail.com&gt;
+   ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
+   ├─ name::String | ASDF.jl
+   └─ version::String | 2.0.0</code></pre><p>This is stored as an <a href="../api/#ASDF.ASDFFile"><code>ASDF.ASDFFile</code></a>. To change the number of rows shown, pass this object to <a href="../api/#ASDF.info-Tuple{IO, ASDF.ASDFFile}"><code>ASDF.info</code></a>:</p><pre><code class="language-julia-repl hljs">julia&gt; ASDF.info(af; max_rows = 3)
+intro.asdf
+├─ field_1::Vector{Int64} | shape = (4,)
+├─ field_2::Vector{String} | shape = (4,)
+  ⋮  (8) more rows</code></pre><p>It contains a <code>metadata</code> field, which is a new dictionary that merges information about this library (stored under the <code>asdf/library</code> key) with the original user-defined <code>af_payload</code> dictionary. For convenience, <code>af.metadata[&lt;key&gt;]</code> can be accessed directly as <code>af[key]</code>. Since the underlying data is a dictionary, it can be modified in the standard way:</p><pre><code class="language-julia-repl hljs">julia&gt; af[&quot;field_1&quot;] = [50, 60, 70, 80];
+
+julia&gt; af[&quot;field_1&quot;]
+4-element Vector{Int64}:
+ 50
+ 60
+ 70
+ 80</code></pre><p>The convenience syntax can also be used to save the modified <code>ASDF.ASDFFile</code> object directly:</p><pre><code class="language-julia-repl hljs">julia&gt; save(&quot;intro_modified.asdf&quot;, af)</code></pre><details class="admonition is-details" id="View-file-7a980a3e480f7ccf"><summary class="admonition-header">View file<a class="admonition-anchor" href="#View-file-7a980a3e480f7ccf" title="Permalink"></a></summary><div class="admonition-body"><pre><code class="language-julia-repl hljs">julia&gt; read(&quot;intro_modified.asdf&quot;, String) |&gt; print
+#ASDF 1.0.0
+#ASDF_STANDARD 1.2.0
+# This is an ASDF file &lt;https://asdf-standard.readthedocs.io/&gt;
+%YAML 1.1
+%TAG ! tag:stsci.edu:asdf/
+---
+!core/asdf-1.1.0
+field_1:
+  - 50
+  - 60
+  - 70
+  - 80
+field_2:
+  - &quot;up&quot;
+  - &quot;down&quot;
+  - &quot;left&quot;
+  - &quot;right&quot;
+field_3:
+  field_3a:
+    - &quot;apple&quot;
+    - &quot;orange&quot;
+    - &quot;pear&quot;
+  field_3b:
+    - 1.0
+    - 2.0
+    - 3.0
+asdf/library: !core/software-1.0.0
+  name: &quot;ASDF.jl&quot;
+  author: &quot;Erik Schnetter &lt;schnetter@gmail.com&gt;&quot;
+  homepage: &quot;https://github.com/JuliaAstro/ASDF.jl&quot;
+  version: &quot;2.0.0&quot;
+...
+#ASDF BLOCK INDEX
+%YAML 1.1
+---
+[]
+...</code></pre></div></details><h2 id="Array-storage"><a class="docs-heading-anchor" href="#Array-storage">Array storage</a><a id="Array-storage-1"></a><a class="docs-heading-anchor-permalink" href="#Array-storage" title="Permalink"></a></h2><p>By default, array data is written inline as a literal to the ASDF file. This can be stored and later accessed more efficiently by wrapping your data in an <a href="../api/#ASDF.NDArrayWrapper"><code>ASDF.NDArrayWrapper</code></a>. This allows for your data to be stored as a binary via the <code>inline = false</code> keyword (default), which can be further optimized by specifying a supported <a href="../api/#ASDF.Compression">compression algorithm</a> to use via the <code>compression</code> keyword:</p><pre><code class="language-julia-repl hljs">julia&gt; af_payload = OrderedDict(&quot;meta&quot; =&gt; OrderedDict(&quot;my&quot; =&gt; OrderedDict(&quot;nested&quot; =&gt; &quot;metadata&quot;)), &quot;data&quot; =&gt; ASDF.NDArrayWrapper([1, 2, 3, 4]; compression = ASDF.C_Bzip2));
+
+julia&gt; save(&quot;intro_compressed.asdf&quot;, af_payload)
+
+julia&gt; af = load(&quot;intro_compressed.asdf&quot;)
+intro_compressed.asdf
+├─ meta::String
+│  └─ my::String
+│     └─ nested::String | metadata
+├─ data::ASDF.NDArray | shape = [4]
+└─ asdf/library::String
+   ├─ author::String | Erik Schnetter &lt;schnetter@gmail.com&gt;
+   ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
+   ├─ name::String | ASDF.jl
+   └─ version::String | 2.0.0</code></pre><details class="admonition is-details" id="View-file-e69217abbe0a3aab"><summary class="admonition-header">View file<a class="admonition-anchor" href="#View-file-e69217abbe0a3aab" title="Permalink"></a></summary><div class="admonition-body"><pre><code class="language-julia-repl hljs">julia&gt; read(&quot;intro_compressed.asdf&quot;, String) |&gt; print
+#ASDF 1.0.0
 #ASDF_STANDARD 1.2.0
 # This is an ASDF file &lt;https://asdf-standard.readthedocs.io/&gt;
 %YAML 1.1
@@ -20,44 +124,25 @@ ASDF.write_file(fpath, af_payload)</code></pre><p>which contains the following f
 meta:
   my:
     nested: &quot;metadata&quot;
-data:
-  - 1
-  - 2
-  - 3
-  - 4
+data: !core/ndarray-1.0.0
+  source: 0
+  shape:
+    - 4
+  datatype: &quot;int64&quot;
+  byteorder: &quot;little&quot;
 asdf/library: !core/software-1.0.0
-  version: &quot;2.0.0&quot;
   name: &quot;ASDF.jl&quot;
   author: &quot;Erik Schnetter &lt;schnetter@gmail.com&gt;&quot;
   homepage: &quot;https://github.com/JuliaAstro/ASDF.jl&quot;
+  version: &quot;2.0.0&quot;
 ...
-#ASDF BLOCK INDEX
+�BLK0   f�0xj�sq���r#ASDF BLOCK INDEX
 %YAML 1.1
 ---
-[]
-...</code></pre><p>This file can be loaded back with <code>ASDF.load_file</code>:</p><pre><code class="language-julia hljs">af = ASDF.load_file(fpath)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">ASDF.ASDFFile(&quot;../data/my_file.asdf&quot;, Dict{Any, Any}(&quot;meta&quot; =&gt; Dict{Any, Any}(&quot;my&quot; =&gt; Dict{Any, Any}(&quot;nested&quot; =&gt; &quot;metadata&quot;)), &quot;data&quot; =&gt; [1, 2, 3, 4], &quot;asdf/library&quot; =&gt; Dict{Any, Any}(&quot;name&quot; =&gt; &quot;ASDF.jl&quot;, &quot;author&quot; =&gt; &quot;Erik Schnetter &lt;schnetter@gmail.com&gt;&quot;, &quot;homepage&quot; =&gt; &quot;https://github.com/JuliaAstro/ASDF.jl&quot;, &quot;version&quot; =&gt; &quot;2.0.0&quot;)), ASDF.LazyBlockHeaders(ASDF.BlockHeader[]))</code></pre><p>This creates an <code>ASDF.ASDFFile</code> object which contains a <code>meta</code> field. This is a new dictionary that merges information about this library (stored under the <code>asdf/library</code> key) with the original user-defined <code>af_payload</code> dictionary:</p><pre><code class="language-julia hljs">af.metadata</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Dict{Any, Any} with 3 entries:
-  &quot;meta&quot;         =&gt; Dict{Any, Any}(&quot;my&quot;=&gt;Dict{Any, Any}(&quot;nested&quot;=&gt;&quot;metadata&quot;))
-  &quot;data&quot;         =&gt; [1, 2, 3, 4]
-  &quot;asdf/library&quot; =&gt; Dict{Any, Any}(&quot;name&quot;=&gt;&quot;ASDF.jl&quot;, &quot;author&quot;=&gt;&quot;Erik Schnetter…</code></pre><pre><code class="language-julia hljs">af.metadata[&quot;asdf/library&quot;]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Dict{Any, Any} with 4 entries:
-  &quot;name&quot;     =&gt; &quot;ASDF.jl&quot;
-  &quot;author&quot;   =&gt; &quot;Erik Schnetter &lt;schnetter@gmail.com&gt;&quot;
-  &quot;homepage&quot; =&gt; &quot;https://github.com/JuliaAstro/ASDF.jl&quot;
-  &quot;version&quot;  =&gt; &quot;2.0.0&quot;</code></pre><p>Since the underlying data is a dictionary, it can be modified in the standard way:</p><pre><code class="language-julia hljs">af.metadata[&quot;meta&quot;][&quot;my&quot;][&quot;nested2&quot;] = &quot;metadata2&quot;
-
-af.metadata</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Dict{Any, Any} with 3 entries:
-  &quot;meta&quot;         =&gt; Dict{Any, Any}(&quot;my&quot;=&gt;Dict{Any, Any}(&quot;nested2&quot;=&gt;&quot;metadata2&quot;,…
-  &quot;data&quot;         =&gt; [1, 2, 3, 4]
-  &quot;asdf/library&quot; =&gt; Dict{Any, Any}(&quot;name&quot;=&gt;&quot;ASDF.jl&quot;, &quot;author&quot;=&gt;&quot;Erik Schnetter…</code></pre><h2 id="Array-storage"><a class="docs-heading-anchor" href="#Array-storage">Array storage</a><a id="Array-storage-1"></a><a class="docs-heading-anchor-permalink" href="#Array-storage" title="Permalink"></a></h2><p>By default, array data is written inline as a literal to the ASDF file. This can be stored and later accessed more efficiently by wrapping your data in an <code>ASDF.NDArrayWrapper</code>. This allows for your data to be stored as a binary via the <code>inline = false</code> keyword, which can be further optimized by specifying a supported <a href="../api/#ASDF.Compression">compression algorithm</a> to use via the <code>compression</code> keyword:</p><pre><code class="language-julia hljs">af_payload = Dict{Any, Any}(
-    &quot;meta&quot; =&gt; Dict(&quot;my&quot; =&gt; Dict(&quot;nested&quot; =&gt; &quot;metadata&quot;)),
-    # Default
-    &quot;data&quot; =&gt; ASDF.NDArrayWrapper([1, 2, 3, 4]; inline = false, compression = ASDF.C_Bzip2),
-)
-
-fpath = joinpath(data_dir, &quot;my_file_compressed.asdf&quot;)
-ASDF.write_file(fpath, af_payload)</code></pre><p>Saving your data as an <code>NDArrayWrapper</code> allows for it to be lazily accessed as a strided view. To access the underlying data, use the <code>[]</code> (dereference) syntax:</p><pre><code class="language-julia hljs">af = ASDF.load_file(fpath)
-
-af.metadata[&quot;data&quot;][]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">4-element reshape(reinterpret(Int64, ::StridedViews.StridedView{UInt8, 2, Memory{UInt8}, typeof(identity)}), 4) with eltype Int64:
+[463,]
+...</code></pre></div></details><p>Using <code>NDArrayWrapper</code> allows for the wrapped data to be lazily accessed as a strided view. To access the underlying data, use the <code>[]</code> (dereference) syntax:</p><pre><code class="language-julia-repl hljs">julia&gt; af[&quot;data&quot;][]
+4-element reshape(reinterpret(Int64, ::StridedViews.StridedView{UInt8, 2, Memory{UInt8}, typeof(identity)}), 4) with eltype Int64:
  1
  2
  3
- 4</code></pre><h2 id="Tagged-objects"><a class="docs-heading-anchor" href="#Tagged-objects">Tagged objects</a><a id="Tagged-objects-1"></a><a class="docs-heading-anchor-permalink" href="#Tagged-objects" title="Permalink"></a></h2><p>Coming soon. Supporting custom objects, extensions.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Home</a><a class="docs-footer-nextpage" href="../examples/jwst/">JWST »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Saturday 4 April 2026 17:53">Saturday 4 April 2026</span>. Using Julia version 1.12.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+ 4</code></pre><h2 id="Tagged-objects"><a class="docs-heading-anchor" href="#Tagged-objects">Tagged objects</a><a id="Tagged-objects-1"></a><a class="docs-heading-anchor-permalink" href="#Tagged-objects" title="Permalink"></a></h2><p>Come back soon to see how custom Julia objects can be handled in ASDF.jl.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Home</a><a class="docs-footer-nextpage" href="../examples/jwst/">JWST »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Friday 10 April 2026 23:37">Friday 10 April 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
