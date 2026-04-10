@@ -9,27 +9,26 @@ A new [Advanced Scientific Data Format (ASDF)](https://asdf-standard.readthedocs
 ### Installation
 
 ```julia-repl
-pkg> add ASDF
+pkg> add ASDF, OrderedCollections
 ```
 
 ### Usage
 
-```julia
-using ASDF
-```
+```@repl
+using ASDF, OrderedCollections
 
-```julia
-# Load
-af = ASDF.load_file("<file.asdf>")
-```
+doc = OrderedDict(
+    "field_1" => [5, 6, 7, 8],
+    "field_2" => ["up", "down", "left", "right"],
+    "field_3" => OrderedDict(
+        "field_3a" => ["apple", "orange", "pear"],
+        "field_3b" => [1.0, 2.0, 3.0],
+    )
+);
 
-```julia
-# Acess and modify
-af.metadata["<key>"] = <val>
-```
+save("example.asdf", doc)
 
-```julia
-# Write
-doc = Dict(<data>)
-ASDF.write_file("<new_file.asdf>", doc)
+af = load("example.asdf")
+
+ASDF.info(af; max_rows = 3)
 ```
