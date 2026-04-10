@@ -813,6 +813,7 @@ function YAML.write(file::ASDFFile)
 end
 
 Base.getindex(af::ASDFFile, key) = af.metadata[key]
+Base.setindex!(af::ASDFFile, value, key) = (af.metadata[key] = value)
 
 struct ASDFTreeNode
     key::Any
@@ -1343,6 +1344,8 @@ julia> save("myfile.asdf", data)
 function fileio_save(f::File{format"ASDF"}, data)
     return write_file(f.filename, data)
 end
+
+fileio_save(f::File{format"ASDF"}, af::ASDFFile) = save(f, af.metadata)
 
 @doc (@doc fileio_save) save
 
