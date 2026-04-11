@@ -847,10 +847,11 @@ function Base.getindex(ndarray::NDArray)
                 data = map(elem -> map(bswap, elem), data)
             end
         else
-            error("Unhandled datatype type: $(typeof(ndarray.datatype))")
+            # Unreachable branch. All variants of `datatype` covered in `parse_asdf_datatype`.
+            @assert false
         end
     else
-        # Caught in the constructor for `NDArray`. This branch would imply that
+        # Unreachable branch. Caught in the constructor for `NDArray`. This branch would imply that
         # `ndarray` is in invalid state; neither `source` nor `data` is given.
         @assert false
     end
