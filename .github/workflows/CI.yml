@@ -9,8 +9,7 @@ jobs:
     strategy:
       matrix:
         version:
-          # TODO: Put back after https://github.com/JuliaIO/FileIO.jl/pull/427
-          #- "min"
+          - "min"
           - "1"
           - "pre"
         os:
