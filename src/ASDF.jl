@@ -507,7 +507,7 @@ function parse_asdf_datatype(val::AbstractVector)
         elseif val[1] == "ucs4"
             return Ucs4Datatype(n)
         else
-            error("Unknown string datatype kind: $(val[1])")
+            throw(ArgumentError("Unknown string datatype kind: $(val[1])"))
         end
     end
     fields = map(val) do d
