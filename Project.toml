@@ -23,7 +23,7 @@ YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
 # TODO: Remove after https://github.com/JuliaIO/FileIO.jl/pull/427
 [sources]
-FileIO = {url = "https://github.com/icweaver/FileIO.jl", rev = "asdf"}
+FileIO = {url = "https://github.com/JuliaIO/FileIO.jl", rev = "master"}
 
 [compat]
 AbstractTrees = "0.4.5"
