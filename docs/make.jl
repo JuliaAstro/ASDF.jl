@@ -11,6 +11,7 @@ makedocs(;
         prettyurls = true,
         canonical = "https://juliaastro.org/ASDF/stable/",
     ),
+    doctest = false,
 )
 
 deploydocs(;

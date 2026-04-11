@@ -10,6 +10,11 @@ using MD5: md5
 using PkgVersion: PkgVersion
 using StridedViews: StridedView
 using YAML: YAML
+using OrderedCollections: OrderedDict
+using FileIO: @format_str, File, load, save
+using AbstractTrees: AbstractTrees
+
+export load, save
 
 ################################################################################
 
@@ -594,7 +599,7 @@ end
 
 struct ASDFFile
     filename::AbstractString
-    metadata::Dict{Any,Any}
+    metadata::OrderedDict{Any,Any}
     lazy_block_headers::LazyBlockHeaders
 end
 
@@ -602,14 +607,132 @@ function YAML.write(file::ASDFFile)
     return "[ASDF file \"$(file.filename)\"]\n" * YAML.write(file.metadata)
 end
 
+Base.getindex(af::ASDFFile, key) = af.metadata[key]
+
+struct ASDFTreeNode
+    key::Any
+    value::Any
+end
+
+AbstractTrees.children(n::ASDFTreeNode) =
+    n.value isa ASDFFile         ? [ASDFTreeNode(k, v) for (k, v) in n.value.metadata] :
+    n.value isa AbstractDict     ? [ASDFTreeNode(k, v) for (k, v) in sort(collect(n.value); by = first)] : ()
+
+AbstractTrees.printnode(io::IO, n::ASDFTreeNode) =
+    n.key === nothing            ? print(io, basename(n.value.filename))                                         :
+    n.value isa AbstractDict     ? print(io, n.key, "::",  typeof(n.key))                              :
+    n.value isa NDArray          ? print(io, n.key, "::",  typeof(n.value), " | shape = ", n.value.shape) :
+    n.value isa AbstractVector   ? print(io, n.key, "::" , typeof(n.value), " | shape = ", size(n.value)) :
+                                   print(io, n.key, "::",  typeof(n.value), " | ", n.value)
+
+"""
+    info(io::IO, af::ASDFFile; max_rows = 20)
+
+Display up to `max_rows` lines of `af` tree. `Base.show` calls this function internally to display this type. Set `max_rows = Inf` to display all rows.
+
+## Examples
+
+```jldoctest
+julia> using OrderedCollections: OrderedDict
+
+julia> doc = OrderedDict("field_\$(i)" => rand(10) for i in 1:25);
+
+julia> save("long.asdf", doc)
+
+julia> af = load("long.asdf")
+long.asdf
+├─ field_1::Vector{Float64} | shape = (10,)
+├─ field_2::Vector{Float64} | shape = (10,)
+├─ field_3::Vector{Float64} | shape = (10,)
+├─ field_4::Vector{Float64} | shape = (10,)
+├─ field_5::Vector{Float64} | shape = (10,)
+├─ field_6::Vector{Float64} | shape = (10,)
+├─ field_7::Vector{Float64} | shape = (10,)
+├─ field_8::Vector{Float64} | shape = (10,)
+├─ field_9::Vector{Float64} | shape = (10,)
+├─ field_10::Vector{Float64} | shape = (10,)
+├─ field_11::Vector{Float64} | shape = (10,)
+├─ field_12::Vector{Float64} | shape = (10,)
+├─ field_13::Vector{Float64} | shape = (10,)
+├─ field_14::Vector{Float64} | shape = (10,)
+├─ field_15::Vector{Float64} | shape = (10,)
+├─ field_16::Vector{Float64} | shape = (10,)
+├─ field_17::Vector{Float64} | shape = (10,)
+├─ field_18::Vector{Float64} | shape = (10,)
+├─ field_19::Vector{Float64} | shape = (10,)
+  ⋮  (7) more rows
+
+julia> ASDF.info(af; max_rows = 5)
+long.asdf
+├─ field_1::Vector{Float64} | shape = (10,)
+├─ field_2::Vector{Float64} | shape = (10,)
+├─ field_3::Vector{Float64} | shape = (10,)
+├─ field_4::Vector{Float64} | shape = (10,)
+  ⋮  (22) more rows
+
+julia> ASDF.info(af; max_rows = Inf)
+long.asdf
+├─ field_1::Vector{Float64} | shape = (10,)
+├─ field_2::Vector{Float64} | shape = (10,)
+├─ field_3::Vector{Float64} | shape = (10,)
+├─ field_4::Vector{Float64} | shape = (10,)
+├─ field_5::Vector{Float64} | shape = (10,)
+├─ field_6::Vector{Float64} | shape = (10,)
+├─ field_7::Vector{Float64} | shape = (10,)
+├─ field_8::Vector{Float64} | shape = (10,)
+├─ field_9::Vector{Float64} | shape = (10,)
+├─ field_10::Vector{Float64} | shape = (10,)
+├─ field_11::Vector{Float64} | shape = (10,)
+├─ field_12::Vector{Float64} | shape = (10,)
+├─ field_13::Vector{Float64} | shape = (10,)
+├─ field_14::Vector{Float64} | shape = (10,)
+├─ field_15::Vector{Float64} | shape = (10,)
+├─ field_16::Vector{Float64} | shape = (10,)
+├─ field_17::Vector{Float64} | shape = (10,)
+├─ field_18::Vector{Float64} | shape = (10,)
+├─ field_19::Vector{Float64} | shape = (10,)
+├─ field_20::Vector{Float64} | shape = (10,)
+├─ field_21::Vector{Float64} | shape = (10,)
+├─ field_22::Vector{Float64} | shape = (10,)
+├─ field_23::Vector{Float64} | shape = (10,)
+├─ field_24::Vector{Float64} | shape = (10,)
+├─ field_25::Vector{Float64} | shape = (10,)
+└─ asdf/library::String
+   ├─ author::String | Erik Schnetter <schnetter@gmail.com>
+   ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
+   ├─ name::String | ASDF.jl
+   └─ version::String | 2.0.0
+"""
+function info(io::IO, af::ASDFFile; max_rows = 20)
+    root = ASDFTreeNode(nothing, af)
+    n_rows = sum(1 for _ in AbstractTrees.PostOrderDFS(root))
+
+    if n_rows ≤ max_rows
+        AbstractTrees.print_tree(io, root)
+    else
+        # Store entire tree in `buf`
+        buf = IOBuffer()
+        AbstractTrees.print_tree(buf, root)
+        # Only print up to `n_rows` lines from that buffer
+        lines = split(String(take!(buf)), '\n', keepempty = false)
+        foreach(l -> println(io, l), Iterators.take(lines, max_rows))
+        println(io, "  ⋮  (", n_rows - max_rows, ") more rows")
+    end
+end
+info(af; kwargs...) = info(stdout, af; kwargs...)
+
+Base.show(io::IO, ::MIME"text/plain", af::ASDFFile) = info(io, af) # Display up to `max_rows` by default
+
 ################################################################################
 
-function load_file(filename::AbstractString; extensions = false, validate_checksum = true)
-    asdf_constructors = copy(YAML.default_yaml_constructors)
-    asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = asdf_constructors["tag:yaml.org,2002:map"]
-    asdf_constructors["tag:stsci.edu:asdf/core/software-1.0.0"] = asdf_constructors["tag:yaml.org,2002:map"]
-    asdf_constructors["tag:stsci.edu:asdf/core/extension_metadata-1.0.0"] = asdf_constructors["tag:yaml.org,2002:map"]
+ordered_map_constructor = (constructor, node) -> YAML.construct_mapping(OrderedDict{Any,Any}, constructor, node)
+asdf_constructors = copy(YAML.default_yaml_constructors)
+delete!(asdf_constructors, "tag:yaml.org,2002:map")  # Let dicttype= handle plain maps
+asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = ordered_map_constructor
+asdf_constructors["tag:stsci.edu:asdf/core/software-1.0.0"] = ordered_map_constructor
+asdf_constructors["tag:stsci.edu:asdf/core/extension_metadata-1.0.0"] = ordered_map_constructor
 
+function load_file(filename::AbstractString; extensions = false, validate_checksum = true)
     if extensions
         # Use fallbacks for now
         asdf_constructors[nothing] = (constructor, node) -> begin
@@ -635,11 +758,45 @@ function load_file(filename::AbstractString; extensions = false, validate_checks
     asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-chunk-1.0.0"] = construct_yaml_ndarray_chunk
     asdf_constructors′["tag:stsci.edu:asdf/core/chunked-ndarray-1.0.0"] = construct_yaml_chunked_ndarray
 
-    metadata = YAML.load(io, asdf_constructors′)
+    metadata = YAML.load(io, asdf_constructors′; dicttype = OrderedDict{Any, Any})
     # lazy_block_headers.block_headers = find_all_blocks(io, position(io))
     lazy_block_headers.block_headers = find_all_blocks(io; validate_checksum)
     return ASDFFile(filename, metadata, lazy_block_headers)
 end
+
+"""
+    load(f::AbstractString)
+
+Load an asdf file at filepath `f`.
+
+## Examples
+
+```jldoctest
+julia> using OrderedCollections: OrderedDict
+
+julia> doc = OrderedDict("field_\$(i)" => rand(10) for i in 1:5); # Create some sample data
+
+julia> save("myfile.asdf", doc)
+
+julia> load("myfile.asdf")
+myfile.asdf
+├─ field_1::Vector{Float64} | shape = (10,)
+├─ field_2::Vector{Float64} | shape = (10,)
+├─ field_3::Vector{Float64} | shape = (10,)
+├─ field_4::Vector{Float64} | shape = (10,)
+├─ field_5::Vector{Float64} | shape = (10,)
+└─ asdf/library::String
+   ├─ author::String | Erik Schnetter <schnetter@gmail.com>
+   ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
+   ├─ name::String | ASDF.jl
+   └─ version::String | 2.0.0
+```
+"""
+function fileio_load(f::File{format"ASDF"})
+    return load_file(f.filename)
+end
+
+@doc (@doc fileio_load) load
 
 ################################################################################
 ################################################################################
@@ -653,7 +810,7 @@ struct ASDFLibrary
 end
 function YAML._print(io::IO, val::ASDFLibrary, level::Int=0, ignore_level::Bool=false)
     println(io, "!core/software-1.0.0")
-    library = Dict(:name => val.name, :author => val.author, :homepage => val.homepage, :version => val.version)
+    library = OrderedDict(:name => val.name, :author => val.author, :homepage => val.homepage, :version => val.version)
     YAML._print(io, library, level, ignore_level)
 end
 
@@ -688,7 +845,7 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bo
         data = val.array
         # Split multidimensional arrays into array-of-arrays
         data = eachslice(data; dims=Tuple(2:ndims(data)))
-        ndarray = Dict(
+        ndarray = OrderedDict(
             :data => data,
             :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
             :datatype => string(Datatype(eltype(val.array))),
@@ -700,7 +857,7 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bo
         source = length(blocks.arrays)
         # `write_file()` has a corresponding `push!()` to `blocks.positions`
         push!(blocks.arrays, val)
-        ndarray = Dict(
+        ndarray = OrderedDict(
             :source => source::Integer,
             :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
             :datatype => string(Datatype(eltype(val.array))),
@@ -748,20 +905,20 @@ function encode_Lz4_block(input::AbstractVector{UInt8}; chunk_size::Int = 1024 *
     return out
 end
 
-function write_file(filename::AbstractString, document::Dict{Any,Any})
+function write_file(filename::AbstractString, document::AbstractDict)
     # Set up block descriptors
     global blocks
     empty!(blocks)
 
     # Ensure standard tags are present
     # TODO:
-    # - provide a function that generates a standard empty document
-    # - don't modify the input
-    # - remove the `{Any,Any}` in the test cases
-    # - maybe make the document not a `Dict` but the stuff with the `metadata` that the writer returns?
-    get!(document, "asdf/library") do
-        ASDFLibrary(software_name, software_author, software_homepage, software_version)
-    end
+    # - [ ] provide a function that generates a standard empty document
+    # - [x] don't modify the input
+    # - [x] remove the `{Any,Any}` in the test cases
+    # - [ ] maybe make the document not a `Dict` but the stuff with the `metadata` that the writer returns?
+    # - [ ] preserve insertion order? https://github.com/JuliaAstro/ASDF.jl/tree/ordered
+    library = ASDFLibrary(software_name, software_author, software_homepage, software_version)
+    full_document = merge(document, OrderedDict{Any, Any}("asdf/library" => library))
 
     # Write YAML part of file
     io = open(filename, "w")
@@ -775,7 +932,7 @@ function write_file(filename::AbstractString, document::Dict{Any,Any})
            ---
            !core/asdf-1.1.0""",
     )
-    YAML.write(io, document)
+    YAML.write(io, full_document)
     println(io, "...")
 
     # Write blocks
@@ -897,5 +1054,26 @@ function write_file(filename::AbstractString, document::Dict{Any,Any})
     # Done.
     return nothing
 end
+
+"""
+    save(f::String, data)
+
+Save `data` to an asdf file at filepath `f`.
+
+## Examples
+
+```jldoctest
+julia> using OrderedCollections: OrderedDict
+
+julia> data = OrderedDict("field_\$(i)" => rand(10) for i in 1:5); # Create some sample data
+
+julia> save("myfile.asdf", data)
+```
+"""
+function fileio_save(f::File{format"ASDF"}, data)
+    return write_file(f.filename, data)
+end
+
+@doc (@doc fileio_save) save
 
 end
