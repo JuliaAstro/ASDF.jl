@@ -817,39 +817,7 @@ function Base.getindex(ndarray::NDArray)
         data = reshape(data, shape[2:end])
         # Correct byteorder if necessary.
         # Do this after imposing the datatype since byteorder depends on the datatype.
-        if ndarray.datatype isa Datatype
-            if ndarray.byteorder != host_byteorder
-                map!(bswap, data, data)
-            end
-        elseif ndarray.datatype isa StructuredDatatype
-            needs_swap = any(
-                !(f.datatype isa AsciiDatatype) && f.byteorder != host_byteorder
-                for f in ndarray.datatype.fields
-            )
-            if needs_swap
-                data = map(data) do elem
-                    swapped = map(ndarray.datatype.fields, Tuple(elem)) do field, val
-                        if field.datatype isa AsciiDatatype
-                            val  # bytes have no endianness
-                        elseif field.byteorder != host_byteorder
-                            bswap(val)
-                        else
-                            val
-                        end
-                    end
-                    NT(swapped)
-                end
-            end
-        elseif ndarray.datatype isa AsciiDatatype
-            # AsciiDatatype: no byteswap needed (single bytes have no endianness)
-        elseif ndarray.datatype isa Ucs4Datatype
-            if ndarray.byteorder != host_byteorder
-                data = map(elem -> map(bswap, elem), data)
-            end
-        else
-            # Unreachable branch. All variants of `datatype` covered in `parse_asdf_datatype`.
-            @assert false
-        end
+        data = correct_byteorder(data, ndarray.datatype, ndarray.byteorder)
     else
         # Unreachable branch. Caught in the constructor for `NDArray`. This branch would imply that
         # `ndarray` is in invalid state; neither `source` nor `data` is given.
@@ -864,6 +832,55 @@ function Base.getindex(ndarray::NDArray)
     end
 
     return data::AbstractArray
+end
+
+"""
+    correct_byteorder(data, dt::Union{Datatype, AsciiDatatype, Ucs4Datatype}, byteorder::Byteorder)
+
+Applies any necessary byteswap to the `data` within `ndarray` after it has been reinterpreted as `Type(dt)`, where `dt = ndarray.datatype`.
+
+`byteorder` is the ndarray-level [`Byteorder`](@ref).
+"""
+correct_byteorder
+
+function correct_byteorder(data, ::Datatype, byteorder::Byteorder)
+    if byteorder != host_byteorder
+        map!(bswap, data, data)
+    end
+    return data
+end
+
+function correct_byteorder(data, dt::StructuredDatatype, ::Byteorder)
+    needs_swap = any(
+        !(f.datatype isa AsciiDatatype) && f.byteorder != host_byteorder
+        for f in dt.fields
+    )
+    if needs_swap
+        data = map(data) do elem
+            swapped = map(dt.fields, Tuple(elem)) do field, val
+                if field.datatype isa AsciiDatatype
+                    val  # bytes have no endianness
+                elseif field.byteorder != host_byteorder
+                    bswap(val)
+                else
+                    val
+                end
+            end
+            Type(dt)(swapped)
+        end
+    end
+    return data
+end
+
+function correct_byteorder(data, ::AsciiDatatype, ::Byteorder)
+    return data
+end
+
+function correct_byteorder(data, ::Ucs4Datatype, byteorder::Byteorder)
+    if byteorder != host_byteorder
+        data = map(elem -> map(bswap, elem), data)
+    end
+    return data
 end
 
 function YAML._print(io::IO, val::NDArray, level::Int = 0, ignore_level::Bool = false)
