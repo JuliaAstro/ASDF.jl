@@ -908,6 +908,7 @@ long.asdf
    ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
    ├─ name::String | ASDF.jl
    └─ version::String | 2.0.0
+```
 """
 function info(io::IO, af::ASDFFile; max_rows = 20)
     root = ASDFTreeNode(nothing, af)
