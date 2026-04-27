@@ -78,6 +78,11 @@ end
         "`strides` must have only positive elements.";
         strides = Int64[0],
     )
+    test_ndarray(
+        ArgumentError,
+        "Unknown string datatype kind: utf16";
+        datatype = ["utf16", 8],
+    )
 end
 
 @testset "getindex" begin
@@ -93,8 +98,12 @@ end
         disk_bytes = collect(reinterpret(UInt8, bswap.(expected)))
         lbh    = ASDF.LazyBlockHeaders()
         push!(lbh.block_headers, make_block_header(disk_bytes))
+
         nd = make_ndarray(; lazy_block_headers = lbh,  source = Int64(0), data = nothing, byteorder = opposite)
         @test nd[] == expected
+
+        nd = make_ndarray(; lazy_block_headers = lbh,  source = Int64(0), data = nothing, byteorder = opposite, datatype = ASDF.Ucs4Datatype(2), shape = [Int64(1)], strides = [Int64(8)])
+        @test nd[] == [(UInt32(0x00000001), UInt32(0x00000002))]
     end
 
     nd = make_ndarray(; strides = Int64[5])
