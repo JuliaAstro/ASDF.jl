@@ -1,0 +1,34 @@
+### A Pluto.jl notebook ###
+# v0.20.23
+
+using Markdown
+using InteractiveUtils
+
+# ╔═╡ f9aa3933-bc7b-4e7f-b9a8-a28ff1a63a1a
+begin
+	using Pkg
+	Pkg.activate(@__DIR__, io=devnull)
+end
+
+# ╔═╡ 6f722221-fe19-4a03-8665-805592baa042
+using ASDF
+
+# ╔═╡ 69d7bbcf-3cea-4638-b99d-d4463782f7a0
+using Downloads: download
+
+# ╔═╡ 0c616404-57a5-433d-9386-f5be0e41262f
+url = "https://data.science.stsci.edu/redirect/ASDF/asdf_tut_simple_1.asdf";
+
+# ╔═╡ d69d0f1f-564a-413c-9bb9-0e8be59fecf5
+filepath = download(url)
+
+# ╔═╡ 5c5df58b-5eb8-4755-8f67-2cf174b0907d
+ASDF.load_file(filepath)
+
+# ╔═╡ Cell order:
+# ╠═f9aa3933-bc7b-4e7f-b9a8-a28ff1a63a1a
+# ╠═6f722221-fe19-4a03-8665-805592baa042
+# ╠═69d7bbcf-3cea-4638-b99d-d4463782f7a0
+# ╠═0c616404-57a5-433d-9386-f5be0e41262f
+# ╠═d69d0f1f-564a-413c-9bb9-0e8be59fecf5
+# ╠═5c5df58b-5eb8-4755-8f67-2cf174b0907d
