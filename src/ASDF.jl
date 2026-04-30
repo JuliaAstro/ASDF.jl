@@ -1090,7 +1090,7 @@ long.asdf
 ├─ field_17::Vector{Float64} | shape = (10,)
 ├─ field_18::Vector{Float64} | shape = (10,)
 ├─ field_19::Vector{Float64} | shape = (10,)
-  ⋮  (7) more rows
+  ⋮  (11) more rows
 
 julia> ASDF.info(af; max_rows = 5)
 long.asdf
@@ -1098,7 +1098,7 @@ long.asdf
 ├─ field_2::Vector{Float64} | shape = (10,)
 ├─ field_3::Vector{Float64} | shape = (10,)
 ├─ field_4::Vector{Float64} | shape = (10,)
-  ⋮  (22) more rows
+  ⋮  (26) more rows
 
 julia> ASDF.info(af; max_rows = Inf)
 long.asdf
@@ -1132,6 +1132,7 @@ long.asdf
    ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
    ├─ name::String | ASDF.jl
    └─ version::String | 2.0.0
+```
 """
 function info(io::IO, af::ASDFFile; max_rows = 20)
     root = ASDFTreeNode(nothing, af)
