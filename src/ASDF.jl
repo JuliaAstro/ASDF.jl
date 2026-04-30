@@ -481,6 +481,177 @@ Base.show(io::IO, datatype::Datatype) = show(io, string(datatype))
 Base.Type(datatype::Datatype) = datatype_type_dict[datatype]
 Datatype(type::Type) = type_datatype_dict[type]
 
+asdf_datatype_yaml(dt::Datatype) = string(dt)  # "float32", "uint8", etc.
+
+################################################################################
+
+"""
+    AsciiDatatype(length::Int)
+
+An ASDF fixed-length ASCII string datatype, corresponding to the `["ascii", N]` form in
+the ASDF datatype spec. Each element occupies exactly `length` bytes, one byte per
+character (all codepoints < 128).
+
+The corresponding Julia type is `NTuple{N, UInt8}`. Byte order is irrelevant for this
+type since each character is a single byte.
+
+See also: [`Ucs4Datatype`](@ref), [`parse_asdf_datatype`](@ref).
+"""
+struct AsciiDatatype
+    length::Int  # Bytes (1 per char)
+end
+
+"""
+    Ucs4Datatype(length::Int)
+
+An ASDF fixed-length UCS-4 string datatype, corresponding to the `["ucs4", N]` form in
+the ASDF datatype spec. Each element occupies exactly `4 * length` bytes, with each
+character encoded as a 4-byte UInt32 in the array's declared byte order.
+
+The corresponding Julia type is `NTuple{N, UInt32}`.
+
+See also: [`AsciiDatatype`](@ref), [`parse_asdf_datatype`](@ref).
+"""
+struct Ucs4Datatype
+    length::Int  # Characters (4 bytes each)
+end
+
+"""
+    Base.Type(dt::AsciiDatatype) -> NTuple{N, UInt8}
+
+Return the Julia `isbitstype` corresponding to an ASDF string datatype, suitable for use
+with `reinterpret` and `sizeof`. `N` is the number of characters (`dt.length`).
+"""
+Base.Type(dt::AsciiDatatype) = NTuple{dt.length, UInt8}
+
+"""
+    Base.Type(dt::Ucs4Datatype)  -> NTuple{N, UInt32}
+
+Return the Julia `isbitstype` corresponding to an ASDF string datatype, suitable for use
+with `reinterpret` and `sizeof`. `N` is the number of characters (`dt.length`).
+"""
+Base.Type(dt::Ucs4Datatype)  = NTuple{dt.length, UInt32}
+
+"""
+    asdf_datatype_yaml(dt) -> Union{String, Vector}
+
+Serialize an ASDF datatype to its YAML-representable form.
+"""
+asdf_datatype_yaml
+
+asdf_datatype_yaml(dt::AsciiDatatype) = ["ascii", dt.length]
+asdf_datatype_yaml(dt::Ucs4Datatype) = ["ucs4", dt.length]
+
+################################################################################
+
+"""
+    StructuredField(name::String, datatype::Union{Datatype,AsciiDatatype,Ucs4Datatype}, byteorder::Byteorder)
+
+A single named field within a [`StructuredDatatype`](@ref). Corresponds to one entry in the ASDF `datatype` list when it takes the dict form:
+
+```yaml
+- {name: x, datatype: float32, byteorder: little}
+- {name: label, datatype: [ascii, 8], byteorder: little}
+```
+
+`byteorder` specifies the byte order for this field specifically, overriding the ndarray's top-level `byteorder`. For [`AsciiDatatype`](@ref) fields, `byteorder` is stored but
+ignored during byte-swapping since single bytes have no endianness.
+"""
+struct StructuredField
+    name::String
+    datatype::Union{Datatype, AsciiDatatype, Ucs4Datatype}
+    byteorder::Byteorder
+end
+
+"""
+    StructuredDatatype(fields::Vector{StructuredField})
+
+An ASDF compound datatype consisting of named fields, corresponding to the list-of-dicts form of the `datatype` key in an ndarray:
+
+```yaml
+datatype:
+- {name: x,      datatype: float32, byteorder: little}
+- {name: y,      datatype: float32, byteorder: little}
+- {name: label,  datatype: [ascii, 4], byteorder: little}
+```
+
+The corresponding Julia type (returned by `Base.Type`) is a `NamedTuple` with one field per entry, e.g., `@NamedTuple{x::Float32, y::Float32, label::NTuple{4,UInt8}}`. This type is `isbitstype`, so `reinterpret`, `sizeof`, and `bswap` all work correctly on it.
+
+See also: [`StructuredField`](@ref), [`parse_asdf_datatype`](@ref).
+"""
+struct StructuredDatatype
+    fields::Vector{StructuredField}
+end
+
+"""
+    Base.Type(sd::StructuredDatatype) -> NamedTuple type
+
+Return the `NamedTuple` type corresponding to a structured ASDF datatype. Field names and types are derived from `sd.fields` in order.
+
+# Example
+
+```
+sd = StructuredDatatype([
+    StructuredField("x",     Datatype_float32,  Byteorder_little),
+    StructuredField("label", AsciiDatatype(4),  Byteorder_little),
+])
+
+Base.Type(sd) == @NamedTuple{x::Float32, label::NTuple{4,UInt8}}
+```
+"""
+function Base.Type(sd::StructuredDatatype)
+    names = Tuple(Symbol(f.name) for f in sd.fields)
+    types = Tuple{(Type(f.datatype) for f in sd.fields)...}
+    return NamedTuple{names, types}
+end
+
+function asdf_datatype_yaml(dt::StructuredDatatype)
+    return map(dt.fields) do f
+        # To-do: replace with OrderedDict after https://github.com/JuliaAstro/ASDF.jl/pull/26
+        Dict("name" => f.name, "datatype" => asdf_datatype_yaml(f.datatype), "byteorder" => string(f.byteorder))
+    end
+end
+
+################################################################################
+
+"""
+    parse_asdf_datatype(val) -> Union{Datatype, AsciiDatatype, Ucs4Datatype, StructuredDatatype}
+
+Parse a raw YAML datatype value into its corresponding ASDF datatype:
+
+- `AbstractString` (e.g. `"float32"`) --> [`Datatype`](@ref)
+- 2-element `AbstractVector` (e.g. `["ascii", 4]`) --> [`AsciiDatatype`](@ref) or [`Ucs4Datatype`](@ref)
+- `AbstractVector` of dicts --> [`StructuredDatatype`](@ref)
+
+Field-level `datatype` values within a structured dtype are parsed recursively, so `["ascii", N]` is valid as a field type.
+
+This is the inverse of [`asdf_datatype_yaml`](@ref).
+"""
+parse_asdf_datatype
+
+parse_asdf_datatype(val::AbstractString) = Datatype(val)
+
+function parse_asdf_datatype(val::AbstractVector)
+    # 2-element [kind, length] form: ["ascii", 4] or ["ucs4", 4]
+    if length(val) == 2 && val[1] isa AbstractString && val[2] isa Integer
+        n = Int(val[2])
+        if val[1] == "ascii"
+            return AsciiDatatype(n)
+        elseif val[1] == "ucs4"
+            return Ucs4Datatype(n)
+        else
+            throw(ArgumentError("Unknown string datatype kind: $(val[1])"))
+        end
+    end
+    fields = map(val) do d
+        name = d["name"]::String
+        dt = parse_asdf_datatype(d["datatype"])
+        bo = haskey(d, "byteorder") ? Byteorder(d["byteorder"]::String) : host_byteorder
+        StructuredField(name, dt, bo)
+    end
+    return StructuredDatatype(fields)
+end
+
 ################################################################################
 
 """
@@ -508,7 +679,7 @@ struct NDArray
     source::Union{Nothing,Int64,AbstractString}
     data::Union{Nothing,AbstractArray}
     shape::Vector{Int64}
-    datatype::Datatype
+    datatype::Union{Datatype,StructuredDatatype,AsciiDatatype,Ucs4Datatype}
     byteorder::Byteorder
     offset::Int64
     strides::Vector{Int64} # stored in ASDF (Python/C) order, not in Julia (Fortran) order
@@ -519,7 +690,7 @@ struct NDArray
         source::Union{Nothing,Int64,AbstractString},
         data::Union{Nothing,AbstractArray},
         shape::Vector{Int64},
-        datatype::Datatype,
+        datatype::Union{Datatype,StructuredDatatype,AsciiDatatype,Ucs4Datatype},
         byteorder::Byteorder,
         offset::Int64,
         strides::Vector{Int64},
@@ -559,7 +730,7 @@ function NDArray(
     source::Union{Nothing,Integer},
     data::Union{Nothing,AbstractArray},
     shape::AbstractVector{<:Integer},
-    datatype::Union{Datatype,AbstractString},
+    datatype::Union{Datatype,StructuredDatatype,AsciiDatatype,Ucs4Datatype,AbstractString,AbstractVector},
     byteorder::Union{Nothing,Byteorder,AbstractString},
     offset::Union{Nothing,Integer}=0,
     strides::Union{Nothing,<:AbstractVector{<:Integer}}=nothing,
@@ -567,8 +738,8 @@ function NDArray(
     if source isa Integer
         source = Int64(source)
     end
-    if datatype isa AbstractString
-        datatype = Datatype(datatype)
+    if datatype isa AbstractString || datatype isa AbstractVector
+        datatype = parse_asdf_datatype(datatype)
     end
     if data !== nothing
         # Convert arrays of arrays into multi-dimensional arrays
@@ -601,7 +772,7 @@ function make_construct_yaml_ndarray(block_headers::LazyBlockHeaders)
         source = get(mapping, "source", nothing)::Union{Nothing,Integer}
         data = get(mapping, "data", nothing)::Union{Nothing,AbstractVector}
         shape = mapping["shape"]::AbstractVector{<:Integer}
-        datatype = mapping["datatype"]::AbstractString
+        datatype = mapping["datatype"] # No annotation needed, `parse_asdf_datatype` handles dispatch
         byteorder = get(mapping, "byteorder", nothing)::Union{Nothing,AbstractString}
         offset = get(mapping, "offset", nothing)::Union{Nothing,Integer}
         strides = get(mapping, "strides", nothing)::Union{Nothing,AbstractVector{<:Integer}}
@@ -640,16 +811,15 @@ function Base.getindex(ndarray::NDArray)
         strides = (1, reverse(ndarray.strides)...)
         data = StridedView(data, Int.(shape), Int.(strides), Int(ndarray.offset))
         # Impose datatype
-        data = reinterpret(Type(ndarray.datatype), data)
+        NT = Type(ndarray.datatype)
+        data = reinterpret(NT, data)
         # Remove the new dimension again
         data = reshape(data, shape[2:end])
         # Correct byteorder if necessary.
         # Do this after imposing the datatype since byteorder depends on the datatype.
-        if ndarray.byteorder != host_byteorder
-            map!(bswap, data, data)
-        end
+        data = correct_byteorder(data, ndarray.datatype, ndarray.byteorder)
     else
-        # Caught in the constructor for `NDArray`. This branch would imply that
+        # Unreachable branch. Caught in the constructor for `NDArray`. This branch would imply that
         # `ndarray` is in invalid state; neither `source` nor `data` is given.
         @assert false
     end
@@ -662,6 +832,60 @@ function Base.getindex(ndarray::NDArray)
     end
 
     return data::AbstractArray
+end
+
+"""
+    correct_byteorder(data, dt::Union{Datatype, AsciiDatatype, Ucs4Datatype}, byteorder::Byteorder)
+
+Applies any necessary byteswap to the `data` within `ndarray` after it has been reinterpreted as `Type(dt)`, where `dt = ndarray.datatype`.
+
+`byteorder` is the ndarray-level [`Byteorder`](@ref).
+"""
+correct_byteorder
+
+function correct_byteorder(data, ::Datatype, byteorder::Byteorder)
+    if byteorder != host_byteorder
+        map!(bswap, data, data)
+    end
+    return data
+end
+
+function correct_byteorder(data, dt::StructuredDatatype, ::Byteorder)
+    needs_swap = any(
+        !(f.datatype isa AsciiDatatype) && f.byteorder != host_byteorder
+        for f in dt.fields
+    )
+    if needs_swap
+        data = map(data) do elem
+            swapped = map(dt.fields, Tuple(elem)) do field, val
+                if field.datatype isa AsciiDatatype
+                    val  # bytes have no endianness
+                elseif field.byteorder != host_byteorder
+                    bswap(val)
+                else
+                    val
+                end
+            end
+            Type(dt)(swapped)
+        end
+    end
+    return data
+end
+
+function correct_byteorder(data, ::AsciiDatatype, ::Byteorder)
+    return data
+end
+
+function correct_byteorder(data, ::Ucs4Datatype, byteorder::Byteorder)
+    if byteorder != host_byteorder
+        data = map(elem -> map(bswap, elem), data)
+    end
+    return data
+end
+
+function YAML._print(io::IO, val::NDArray, level::Int = 0, ignore_level::Bool = false)
+    # TODO: Get compression from underlying header block?
+    YAML._print(io, NDArrayWrapper(val[]; compression = C_None), level, ignore_level)
 end
 
 ################################################################################
@@ -724,7 +948,7 @@ A logical N-dimensional array assembled from a collection of arbitrarily-positio
 """
 struct ChunkedNDArray
     shape::Vector{Int64}
-    datatype::Datatype
+    datatype::Union{Datatype, StructuredDatatype, AsciiDatatype, Ucs4Datatype}
     chunks::AbstractVector{NDArrayChunk}
 
     function ChunkedNDArray(shape::Vector{Int64}, datatype::Datatype, chunks::Vector{NDArrayChunk})
@@ -751,9 +975,9 @@ struct ChunkedNDArray
 end
 
 function ChunkedNDArray(
-    shape::AbstractVector{<:Integer}, datatype::Union{Datatype,AbstractString}, chunks::AbstractVector{NDArrayChunk}
+    shape::AbstractVector{<:Integer}, datatype::Union{Datatype,StructuredDatatype,AsciiDatatype,Ucs4Datatype,AbstractString,AbstractVector}, chunks::AbstractVector{NDArrayChunk}
 )
-    if datatype isa AbstractString
+    if datatype isa AbstractString || datatype isa AbstractVector
         datatype = Datatype(datatype)
     end
     return ChunkedNDArray(Vector{Int64}(shape), datatype, chunks)
@@ -763,7 +987,7 @@ function make_construct_yaml_chunked_ndarray(block_headers::LazyBlockHeaders)
     function construct_yaml_chunked_ndarray(constructor::YAML.Constructor, node::YAML.Node)
         mapping = YAML.construct_mapping(constructor, node)
         shape = mapping["shape"]::AbstractVector{<:Integer}
-        datatype = mapping["datatype"]::AbstractString
+        datatype = mapping["datatype"]
         chunks = mapping["chunks"]::AbstractVector{NDArrayChunk}
         return ChunkedNDArray(shape, datatype, chunks)
     end
@@ -1100,7 +1324,37 @@ Base.isempty(blocks::Blocks) = isempty(blocks.arrays) && isempty(blocks.position
 # This means that `write_file` is not thread-safe.
 const blocks::Blocks = Blocks()
 
+"""
+    infer_asdf_datatype(T::Type) --> Union{Datatype, AsciiDatatype, Ucs4Datatype, StructuredDatatype}
+
+Infer the ASDF datatype from a Julia element type, used when writing arrays:
+
+- `NTuple{N, UInt8}` --> [`AsciiDatatype(N)`](@ref AsciiDatatype)
+- `NTuple{N, UInt32}` --> [`Ucs4Datatype(N)`](@ref Ucs4Datatype)
+- `NamedTuple` --> [`StructuredDatatype`](@ref) with fields inferred recursively
+- Any other type --> [`Datatype`](@ref) via the existing `type_datatype_dict` lookup
+
+Errors if `T` is not representable as an ASDF datatype.
+
+See also: [`asdf_datatype_yaml`](@ref).
+"""
+function infer_asdf_datatype(T::Type)::Union{Datatype, AsciiDatatype, Ucs4Datatype, StructuredDatatype}
+    if T <: NTuple{N, UInt8} where N
+        return AsciiDatatype(fieldcount(T))
+    elseif T <: NTuple{N, UInt32} where N
+        return Ucs4Datatype(fieldcount(T))
+    elseif T <: NamedTuple
+        fields = map(fieldnames(T), fieldtypes(T)) do name, FT
+            StructuredField(string(name), infer_asdf_datatype(FT), host_byteorder)
+        end
+        return StructuredDatatype(collect(fields))
+    else
+        return Datatype(T)  # existing dict lookup, errors on unknown types
+    end
+end
+
 function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bool=false)
+    datatype = infer_asdf_datatype(eltype(val.array))
     if val.inline
         data = val.array
         # Split multidimensional arrays into array-of-arrays
@@ -1108,7 +1362,7 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bo
         ndarray = OrderedDict(
             :data => data,
             :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
-            :datatype => string(Datatype(eltype(val.array))),
+            :datatype => asdf_datatype_yaml(datatype),#string(Datatype(eltype(val.array))),
             # :offset => 0::Integer,
             # :strides => ::Vector{Int64},
         )
@@ -1120,7 +1374,7 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bo
         ndarray = OrderedDict(
             :source => source::Integer,
             :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
-            :datatype => string(Datatype(eltype(val.array))),
+            :datatype => asdf_datatype_yaml(datatype),
             :byteorder => string(host_byteorder::Byteorder),
             # :offset => 0::Integer,
             # :strides => ::Vector{Int64},
@@ -1224,7 +1478,6 @@ function write_file(filename::AbstractString, document::AbstractDict)
         header_size = 48
         flags = 0               # not streamed
         compression = compression_keys[array.compression]
-        data_size = sizeof(array.array)
 
         # Write block
         # TODO: create function write_block
@@ -1236,6 +1489,8 @@ function write_file(filename::AbstractString, document::AbstractDict)
         input = reshape(input, :)
         # Reinterpret as UInt8
         input = reinterpret(UInt8, input)
+
+        data_size = UInt64(length(input))
 
         # TODO: Write directly to file
         if array.compression == C_None
