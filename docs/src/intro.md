@@ -218,12 +218,8 @@ intro_compressed.asdf
 Using `NDArrayWrapper` allows for the wrapped data to be lazily accessed as a strided view. To access the underlying data, use the `[]` (dereference) syntax:
 
 ```jldoctest intro
-julia> af["data"][]
-4-element reshape(reinterpret(Int64, ::StridedViews.StridedView{UInt8, 2, Memory{UInt8}, typeof(identity)}), 4) with eltype Int64:
- 1
- 2
- 3
- 4
+julia> af["data"][] == [1, 2, 3, 4]
+true
 ```
 
 ## Tagged objects
