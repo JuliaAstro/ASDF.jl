@@ -66,11 +66,6 @@ The saved file contains the following human-readable contents:
       homepage: "https://github.com/JuliaAstro/ASDF.jl"
       version: "2.0.0"
     ...
-    #ASDF BLOCK INDEX
-    %YAML 1.1
-    ---
-    []
-    ...
     ```
 
 which can be loaded back with FileIO.jl's generic [`load`](@ref) function:
@@ -153,11 +148,6 @@ julia> save("intro_modified.asdf", af)
       author: "Erik Schnetter <schnetter@gmail.com>"
       homepage: "https://github.com/JuliaAstro/ASDF.jl"
       version: "2.0.0"
-    ...
-    #ASDF BLOCK INDEX
-    %YAML 1.1
-    ---
-    []
     ...
     ```
 

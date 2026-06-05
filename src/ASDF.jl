@@ -1462,115 +1462,117 @@ function write_file(filename::AbstractString, document::AbstractDict)
     println(io, "...")
 
     # Write blocks
-    for array in blocks.arrays
-        source = length(blocks.positions)
-        pos = position(io)
-        push!(blocks.positions, pos)
+    if !isempty(blocks.arrays)
+        for array in blocks.arrays
+            source = length(blocks.positions)
+            pos = position(io)
+            push!(blocks.positions, pos)
 
-        # TODO: create function write_block_header
-        max_header_size = 6 + 48
-        header = Array{UInt8}(undef, max_header_size)
-        # # Skip the header.; the real header will be
-        # # written later once its contents are known
-        # skip(io, length(header))
+            # TODO: create function write_block_header
+            max_header_size = 6 + 48
+            header = Array{UInt8}(undef, max_header_size)
+            # # Skip the header.; the real header will be
+            # # written later once its contents are known
+            # skip(io, length(header))
 
-        token = block_magic_token
-        header_size = 48
-        flags = 0               # not streamed
-        compression = compression_keys[array.compression]
+            token = block_magic_token
+            header_size = 48
+            flags = 0               # not streamed
+            compression = compression_keys[array.compression]
 
-        # Write block
-        # TODO: create function write_block
+            # Write block
+            # TODO: create function write_block
 
-        input = array.array
-        # Make dense (contiguous) if necessary
-        input = input isa DenseArray ? input : Array(input)
-        # Reshape to 1D
-        input = reshape(input, :)
-        # Reinterpret as UInt8
-        input = reinterpret(UInt8, input)
+            input = array.array
+            # Make dense (contiguous) if necessary
+            input = input isa DenseArray ? input : Array(input)
+            # Reshape to 1D
+            input = reshape(input, :)
+            # Reinterpret as UInt8
+            input = reinterpret(UInt8, input)
 
-        data_size = UInt64(length(input))
+            data_size = UInt64(length(input))
 
-        # TODO: Write directly to file
-        if array.compression == C_None
-            data = input
-        elseif array.compression == C_Xz
-            # Copy
-            # TODO: Don't copy input
-            input = input isa Vector ? input : Vector(input)
-            data = transcode(XzCompressor, input)
-        elseif array.compression == C_Lz4 && array.lz4_layout == :block
-            data = encode_Lz4_block(input)
-            #data = encode(LZ4BlockEncodeOptions(), input) # Not compatible with Python asdf
-        else
-            if array.compression == C_Blosc
-                encode_options = BloscEncodeOptions(; clevel=9, doshuffle=2, typesize=sizeof(eltype(array.array)), compressor="zstd")
-            elseif array.compression == C_Bzip2
-                encode_options = BZ2EncodeOptions(; blockSize100k=9)
-            elseif array.compression == C_Lz4 && array.lz4_layout == :frame
-                encode_options = LZ4FrameEncodeOptions(; compressionLevel=12, blockSizeID=7)
-            elseif array.compression == C_Zlib
-                encode_options = ZlibEncodeOptions(; level=9)
-            elseif array.compression == C_Zstd
-                encode_options = ZstdEncodeOptions(; compressionLevel=22)
+            # TODO: Write directly to file
+            if array.compression == C_None
+                data = input
+            elseif array.compression == C_Xz
+                # Copy
+                # TODO: Don't copy input
+                input = input isa Vector ? input : Vector(input)
+                data = transcode(XzCompressor, input)
+            elseif array.compression == C_Lz4 && array.lz4_layout == :block
+                data = encode_Lz4_block(input)
+                #data = encode(LZ4BlockEncodeOptions(), input) # Not compatible with Python asdf
             else
-                error("`array` has invalid state: `compression` field has value not specified in `Compression` enum.")
+                if array.compression == C_Blosc
+                    encode_options = BloscEncodeOptions(; clevel=9, doshuffle=2, typesize=sizeof(eltype(array.array)), compressor="zstd")
+                elseif array.compression == C_Bzip2
+                    encode_options = BZ2EncodeOptions(; blockSize100k=9)
+                elseif array.compression == C_Lz4 && array.lz4_layout == :frame
+                    encode_options = LZ4FrameEncodeOptions(; compressionLevel=12, blockSizeID=7)
+                elseif array.compression == C_Zlib
+                    encode_options = ZlibEncodeOptions(; level=9)
+                elseif array.compression == C_Zstd
+                    encode_options = ZstdEncodeOptions(; compressionLevel=22)
+                else
+                    error("`array` has invalid state: `compression` field has value not specified in `Compression` enum.")
+                end
+                data = encode(encode_options, input)
             end
-            data = encode(encode_options, input)
+
+            # Don't compress unless it reduces the size
+            if length(data) >= length(input)
+                compression = compression_keys[C_None]
+                data = input
+            end
+
+            # We need the standard, dense layout
+            data::AbstractVector{UInt8}
+            data::Union{DenseArray,Base.ReinterpretArray{<:Any,<:Any,<:Any,<:DenseArray}}
+
+            used_size = length(data)
+            allocated_size = used_size
+            checksum = Vector{UInt8}(md5(data))
+
+            # Fill header
+            header[1:4] .= token
+            header[5:6] .= native2big_U16(header_size)
+            header[7:10] .= native2big_U32(flags)
+            header[11:14] .= compression
+            header[15:22] .= native2big_U64(allocated_size)
+            header[23:30] .= native2big_U64(used_size)
+            header[31:38] .= native2big_U64(data_size)
+            header[39:54] .= checksum
+
+            # Write header
+            # endpos = position(io)
+            # seek(io, pos)
+            write(io, header)
+            # seek(io, endpos)
+
+            # Write data
+            write(io, data)
+
+            # Check consistency
+            endpos = position(io)
+            @assert endpos == pos + 6 + header_size + allocated_size # Ending position matches number of bytes written
         end
+        # Global `blocks` should have valid state: number of arrays matches number of `positions`.
+        # If not, check that `write_file()` and `YAML._print()` match.
+        @assert length(blocks.positions) == length(blocks.arrays)
 
-        # Don't compress unless it reduces the size
-        if length(data) >= length(input)
-            compression = compression_keys[C_None]
-            data = input
+        # Write block list
+        println(io, "#ASDF BLOCK INDEX")
+        println(io, "%YAML 1.1")
+        println(io, "---")
+        print(io, "[")
+        for pos in blocks.positions
+            print(io, pos, ",")
         end
-
-        # We need the standard, dense layout
-        data::AbstractVector{UInt8}
-        data::Union{DenseArray,Base.ReinterpretArray{<:Any,<:Any,<:Any,<:DenseArray}}
-
-        used_size = length(data)
-        allocated_size = used_size
-        checksum = Vector{UInt8}(md5(data))
-
-        # Fill header
-        header[1:4] .= token
-        header[5:6] .= native2big_U16(header_size)
-        header[7:10] .= native2big_U32(flags)
-        header[11:14] .= compression
-        header[15:22] .= native2big_U64(allocated_size)
-        header[23:30] .= native2big_U64(used_size)
-        header[31:38] .= native2big_U64(data_size)
-        header[39:54] .= checksum
-
-        # Write header
-        # endpos = position(io)
-        # seek(io, pos)
-        write(io, header)
-        # seek(io, endpos)
-
-        # Write data
-        write(io, data)
-
-        # Check consistency
-        endpos = position(io)
-        @assert endpos == pos + 6 + header_size + allocated_size # Ending position matches number of bytes written
+        println(io, "]")
+        println(io, "...")
     end
-    # Global `blocks` should have valid state: number of arrays matches number of `positions`.
-    # If not, check that `write_file()` and `YAML._print()` match.
-    @assert length(blocks.positions) == length(blocks.arrays)
-
-    # Write block list
-    println(io, "#ASDF BLOCK INDEX")
-    println(io, "%YAML 1.1")
-    println(io, "---")
-    print(io, "[")
-    for pos in blocks.positions
-        print(io, pos, ",")
-    end
-    println(io, "]")
-    println(io, "...")
 
     # Close file
     close(io)
