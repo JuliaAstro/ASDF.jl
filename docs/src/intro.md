@@ -35,7 +35,7 @@ The saved file contains the following human-readable contents:
     ```jldoctest intro
     julia> read("intro.asdf", String) |> print
     #ASDF 1.0.0
-    #ASDF_STANDARD 1.2.0
+    #ASDF_STANDARD 1.6.0
     # This is an ASDF file <https://asdf-standard.readthedocs.io/>
     %YAML 1.1
     %TAG ! tag:stsci.edu:asdf/
@@ -123,7 +123,7 @@ julia> save("intro_modified.asdf", af)
     ```jldoctest intro
     julia> read("intro_modified.asdf", String) |> print
     #ASDF 1.0.0
-    #ASDF_STANDARD 1.2.0
+    #ASDF_STANDARD 1.6.0
     # This is an ASDF file <https://asdf-standard.readthedocs.io/>
     %YAML 1.1
     %TAG ! tag:stsci.edu:asdf/
@@ -187,7 +187,7 @@ intro_compressed.asdf
     ```julia-repl
     julia> read("intro_compressed.asdf", String) |> print
     #ASDF 1.0.0
-    #ASDF_STANDARD 1.2.0
+    #ASDF_STANDARD 1.6.0
     # This is an ASDF file <https://asdf-standard.readthedocs.io/>
     %YAML 1.1
     %TAG ! tag:stsci.edu:asdf/

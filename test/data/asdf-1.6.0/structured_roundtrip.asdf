@@ -1,5 +1,5 @@
 #ASDF 1.0.0
-#ASDF_STANDARD 1.2.0
+#ASDF_STANDARD 1.6.0
 # This is an ASDF file <https://asdf-standard.readthedocs.io/>
 %YAML 1.1
 %TAG ! tag:stsci.edu:asdf/

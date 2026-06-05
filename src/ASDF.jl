@@ -1426,7 +1426,7 @@ Writes an ASDF file to disk. `document` is a plain `Dict` whose values may inclu
 
 Layout of the output file:
 
-1. ASDF/YAML header (`#ASDF 1.0.0, #ASDF_STANDARD 1.2.0, %YAML 1.1`)
+1. ASDF/YAML header (`#ASDF 1.0.0, #ASDF_STANDARD 1.6.0, %YAML 1.1`)
 1. YAML tree (`!core/asdf-1.1.0`)
 1. Binary blocks — one per [`NDArrayWrapper`](@ref) that has `inline == false`
 1. Block index (`#ASDF BLOCK INDEX`)
@@ -1451,7 +1451,7 @@ function write_file(filename::AbstractString, document::AbstractDict)
     println(
         io,
         """#ASDF 1.0.0
-           #ASDF_STANDARD 1.2.0
+           #ASDF_STANDARD 1.6.0
            # This is an ASDF file <https://asdf-standard.readthedocs.io/>
            %YAML 1.1
            %TAG ! tag:stsci.edu:asdf/
