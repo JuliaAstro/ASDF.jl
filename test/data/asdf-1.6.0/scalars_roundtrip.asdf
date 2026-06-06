@@ -5,11 +5,11 @@
 %TAG ! tag:stsci.edu:asdf/
 ---
 !core/asdf-1.1.0
-asdf_library:
-  author: "The ASDF Developers"
-  homepage: "http://github.com/asdf-format/asdf"
-  name: "asdf"
-  version: "4.1.0"
+asdf_library: !core/software-1.0.0
+  name: "ASDF.jl"
+  author: "Erik Schnetter <schnetter@gmail.com>"
+  homepage: "https://github.com/JuliaAstro/ASDF.jl"
+  version: "2.0.0"
 history:
   extensions:
     - extension_class: "asdf.extension._manifest.ManifestExtension"
@@ -23,9 +23,4 @@ history:
 float: 3.14
 int: 42
 string: "foo"
-asdf/library: !core/software-1.0.0
-  name: "ASDF.jl"
-  author: "Erik Schnetter <schnetter@gmail.com>"
-  homepage: "https://github.com/JuliaAstro/ASDF.jl"
-  version: "2.0.0"
 ...

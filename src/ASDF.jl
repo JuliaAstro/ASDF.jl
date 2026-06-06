@@ -1127,7 +1127,7 @@ long.asdf
 ├─ field_23::Vector{Float64} | shape = (10,)
 ├─ field_24::Vector{Float64} | shape = (10,)
 ├─ field_25::Vector{Float64} | shape = (10,)
-└─ asdf/library::String
+└─ asdf_library::String
    ├─ author::String | Erik Schnetter <schnetter@gmail.com>
    ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
    ├─ name::String | ASDF.jl
@@ -1232,7 +1232,7 @@ myfile.asdf
 ├─ field_3::Vector{Float64} | shape = (10,)
 ├─ field_4::Vector{Float64} | shape = (10,)
 ├─ field_5::Vector{Float64} | shape = (10,)
-└─ asdf/library::String
+└─ asdf_library::String
    ├─ author::String | Erik Schnetter <schnetter@gmail.com>
    ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
    ├─ name::String | ASDF.jl
@@ -1252,7 +1252,7 @@ end
 """
     ASDFLibrary
 
-Software provenance metadata, serialized as a `!core/software-1.0.0 YAML` tag. [`ASDF.write_file`] inserts an entry automatically under the key `"asdf/library"` if one is not already present, using the package's own name, author, homepage, and version.
+Software provenance metadata, serialized as a `!core/software-1.0.0 YAML` tag. [`ASDF.write_file`] inserts an entry automatically under the key `"asdf_library"` if one is not already present, using the package's own name, author, homepage, and version.
 """
 struct ASDFLibrary
     name::AbstractString
@@ -1444,7 +1444,7 @@ function write_file(filename::AbstractString, document::AbstractDict)
     # - [ ] maybe make the document not a `Dict` but the stuff with the `metadata` that the writer returns?
     # - [ ] preserve insertion order? https://github.com/JuliaAstro/ASDF.jl/tree/ordered
     library = ASDFLibrary(software_name, software_author, software_homepage, software_version)
-    full_document = merge(document, OrderedDict{Any, Any}("asdf/library" => library))
+    full_document = merge(document, OrderedDict{Any, Any}("asdf_library" => library))
 
     # Write YAML part of file
     io = open(filename, "w")

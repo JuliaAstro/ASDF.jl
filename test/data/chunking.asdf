@@ -5,7 +5,7 @@
 %TAG ! tag:stsci.edu:asdf/
 ---
 !core/asdf-1.1.0
-asdf/library: !core/software-1.0.0
+asdf_library: !core/software-1.0.0
   name: asdf-cxx
   author: Erik Schnetter
   homepage: https://github.com/eschnett/asdf-cxx

@@ -60,7 +60,7 @@ The saved file contains the following human-readable contents:
         - 1.0
         - 2.0
         - 3.0
-    asdf/library: !core/software-1.0.0
+    asdf_library: !core/software-1.0.0
       name: "ASDF.jl"
       author: "Erik Schnetter <schnetter@gmail.com>"
       homepage: "https://github.com/JuliaAstro/ASDF.jl"
@@ -78,7 +78,7 @@ intro.asdf
 ├─ field_3::String
 │  ├─ field_3a::Vector{String} | shape = (3,)
 │  └─ field_3b::Vector{Float64} | shape = (3,)
-└─ asdf/library::String
+└─ asdf_library::String
    ├─ author::String | Erik Schnetter <schnetter@gmail.com>
    ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
    ├─ name::String | ASDF.jl
@@ -95,7 +95,7 @@ intro.asdf
   ⋮  (8) more rows
 ```
 
-It contains a `metadata` field, which is a new dictionary that merges information about this library (stored under the `asdf/library` key) with the original user-defined `af_payload` dictionary. For convenience, `af.metadata[<key>]` can be accessed directly as `af[key]`. Since the underlying data is a dictionary, it can be modified in the standard way:
+It contains a `metadata` field, which is a new dictionary that merges information about this library (stored under the `asdf_library` key) with the original user-defined `af_payload` dictionary. For convenience, `af.metadata[<key>]` can be accessed directly as `af[key]`. Since the underlying data is a dictionary, it can be modified in the standard way:
 
 ```jldoctest intro
 julia> af["field_1"] = [50, 60, 70, 80];
@@ -143,7 +143,7 @@ julia> save("intro_modified.asdf", af)
         - 1.0
         - 2.0
         - 3.0
-    asdf/library: !core/software-1.0.0
+    asdf_library: !core/software-1.0.0
       name: "ASDF.jl"
       author: "Erik Schnetter <schnetter@gmail.com>"
       homepage: "https://github.com/JuliaAstro/ASDF.jl"
@@ -166,7 +166,7 @@ intro_compressed.asdf
 │  └─ my::String
 │     └─ nested::String | metadata
 ├─ data::ASDF.NDArray | shape = [4]
-└─ asdf/library::String
+└─ asdf_library::String
    ├─ author::String | Erik Schnetter <schnetter@gmail.com>
    ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
    ├─ name::String | ASDF.jl
@@ -192,7 +192,7 @@ intro_compressed.asdf
         - 4
       datatype: "int64"
       byteorder: "little"
-    asdf/library: !core/software-1.0.0
+    asdf_library: !core/software-1.0.0
       name: "ASDF.jl"
       author: "Erik Schnetter <schnetter@gmail.com>"
       homepage: "https://github.com/JuliaAstro/ASDF.jl"
