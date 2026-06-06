@@ -492,10 +492,12 @@ An ASDF fixed-length ASCII string datatype, corresponding to the `["ascii", N]` 
 the ASDF datatype spec. Each element occupies exactly `length` bytes, one byte per
 character (all codepoints < 128).
 
-The corresponding Julia type is `NTuple{N, UInt8}`. Byte order is irrelevant for this
-type since each character is a single byte.
+The corresponding `isbitstype` Julia type is `NTuple{N, UInt8}`. Byte order is irrelevant for
+this type since each character is a single byte. When an array of this datatype is materialized
+with [`Base.getindex(ndarray::NDArray)`](@ref), each element is presented as an
+[`AsciiString`](@ref): a thin `AbstractString` view over those bytes, with identical contents.
 
-See also: [`Ucs4Datatype`](@ref), [`parse_asdf_datatype`](@ref).
+See also: [`Ucs4Datatype`](@ref), [`AsciiString`](@ref), [`parse_asdf_datatype`](@ref).
 """
 struct AsciiDatatype
     length::Int  # Bytes (1 per char)
@@ -508,9 +510,12 @@ An ASDF fixed-length UCS-4 string datatype, corresponding to the `["ucs4", N]` f
 the ASDF datatype spec. Each element occupies exactly `4 * length` bytes, with each
 character encoded as a 4-byte UInt32 in the array's declared byte order.
 
-The corresponding Julia type is `NTuple{N, UInt32}`.
+The corresponding `isbitstype` Julia type is `NTuple{N, UInt32}`. When an array of this
+datatype is materialized with [`Base.getindex(ndarray::NDArray)`](@ref), each element is
+presented as a [`UCS4String`](@ref): a thin `AbstractString` view over those codepoints that
+displays and behaves as a Julia string, with identical bytes.
 
-See also: [`AsciiDatatype`](@ref), [`parse_asdf_datatype`](@ref).
+See also: [`AsciiDatatype`](@ref), [`UCS4String`](@ref), [`parse_asdf_datatype`](@ref).
 """
 struct Ucs4Datatype
     length::Int  # Characters (4 bytes each)
@@ -788,9 +793,10 @@ Returns the fully materialized array. See [`ASDF.NDArray`](@ref) for definitions
 
 ```julia
 size(result) == Tuple(reverse(ndarray.shape))
-eltype(result) == Type(ndarray.datatype)
-sizeof(eltype) .* strides(result) == Tuple(reverse(ndarray.strides))
+eltype(result) == ASDF.materialized_eltype(ndarray.datatype)
 ```
+
+For the `ucs4` and `ascii` string datatypes, [`materialized_eltype`](@ref) is a thin `AbstractString` view over the characters ([`UCS4String`](@ref) / [`AsciiString`](@ref); see [`stringify_data`](@ref)). For all other datatypes, `eltype(result) == Type(ndarray.datatype)` and additionally `sizeof(eltype) .* strides(result) == Tuple(reverse(ndarray.strides))`.
 """
 function Base.getindex(ndarray::NDArray)
     if ndarray.data !== nothing
@@ -830,6 +836,12 @@ function Base.getindex(ndarray::NDArray)
     if sizeof(eltype(data)) .* Base.strides(data) != Tuple(reverse(ndarray.strides))
         error("`data` has different stride from `ndarray.strides`")
     end
+
+    # Present `ucs4`/`ascii` data as `UCS4String`/`AsciiString` rather than raw tuples of
+    # codepoints. Done after the layout checks above, which rely on the `isbitstype` tuple
+    # representation; the views are a zero-copy `reinterpret` sharing those bytes, so this is
+    # display/behavior only.
+    data = stringify_data(data, ndarray.datatype)
 
     return data::AbstractArray
 end
@@ -882,6 +894,113 @@ function correct_byteorder(data, ::Ucs4Datatype, byteorder::Byteorder)
     end
     return data
 end
+
+"""
+    UCS4String{N} <: AbstractString
+
+A fixed-width UCS-4 string of `N` characters, as materialized from an [`Ucs4Datatype`](@ref)
+array. It wraps the raw `NTuple{N, UInt32}` codepoints and is `isbitstype` with an identical
+memory layout, so it reinterprets to and from the on-disk block bytes exactly like the tuple
+would. The difference is purely in presentation: a `UCS4String` *displays* and *behaves* as a
+Julia string rather than as raw `UInt32` codepoints.
+
+```jldoctest
+julia> s = ASDF.UCS4String((UInt32('h'), UInt32('i'), UInt32(0)))  # null-padded
+"hi"
+
+julia> s == "hi"
+true
+```
+
+As a fixed-width string, trailing null (`\\0`) padding is treated as unused and excluded from
+the string's length and contents. The full `N` codepoints are retained internally so the
+on-disk representation round-trips unchanged.
+
+See also: [`AsciiString`](@ref).
+"""
+struct UCS4String{N} <: AbstractString
+    codes::NTuple{N, UInt32}
+end
+
+"""
+    AsciiString{N} <: AbstractString
+
+A fixed-width ASCII string of `N` characters, as materialized from an [`AsciiDatatype`](@ref)
+array. The single-byte analogue of [`UCS4String`](@ref): it wraps the raw `NTuple{N, UInt8}`
+bytes and is `isbitstype` with an identical memory layout, reinterpreting to and from the
+on-disk block bytes exactly like the tuple would, while *displaying* and *behaving* as a Julia
+string rather than as raw `UInt8` bytes.
+
+```jldoctest
+julia> s = ASDF.AsciiString((UInt8('h'), UInt8('i'), UInt8(0)))  # null-padded
+"hi"
+
+julia> s == "hi"
+true
+```
+
+As with `UCS4String`, trailing null (`\\0`) padding is excluded from the string's length and
+contents, while the full `N` bytes are retained internally so the on-disk representation
+round-trips unchanged.
+"""
+struct AsciiString{N} <: AbstractString
+    codes::NTuple{N, UInt8}
+end
+
+# Both ASDF string views share the same fixed-width, null-padded, one-codeunit-per-character
+# `AbstractString` interface; only the code-unit type differs.
+const ASDFString = Union{UCS4String, AsciiString}
+
+# Number of significant characters, i.e. `N` minus any trailing null padding.
+function significant_length(s::ASDFString)
+    n = length(s.codes)
+    @inbounds while n > 0 && s.codes[n] == 0
+        n -= 1
+    end
+    return n
+end
+
+Base.ncodeunits(s::ASDFString) = significant_length(s)
+Base.codeunit(::UCS4String) = UInt32
+Base.codeunit(::AsciiString) = UInt8
+function Base.codeunit(s::ASDFString, i::Integer)
+    @boundscheck 1 <= i <= ncodeunits(s) || throw(BoundsError(s, i))
+    return @inbounds s.codes[i]
+end
+Base.isvalid(s::ASDFString, i::Integer) = 1 <= i <= ncodeunits(s)
+Base.length(s::ASDFString) = ncodeunits(s)
+function Base.iterate(s::ASDFString, i::Int = 1)
+    # State is the code-unit index, per the `AbstractString` interface (`getindex` calls
+    # `iterate(s, i::Integer)`), so the significant length is rechecked each step.
+    i > ncodeunits(s) && return nothing
+    u = s.codes[i]
+    isvalid(Char, u) || error("$(typeof(s)) contains an invalid Unicode codepoint $(repr(u)) at index $i")
+    return (Char(u), i + 1)
+end
+
+"""
+    stringify_data(data, datatype) -> AbstractArray
+
+Present a materialized [`Ucs4Datatype`](@ref) array as [`UCS4String`](@ref)s, and an
+[`AsciiDatatype`](@ref) array as [`AsciiString`](@ref)s, instead of raw tuples of codepoints.
+For any other datatype the data is returned unchanged. The string views are `isbitstype` with
+the same layout as the backing tuples, so this is a zero-copy `reinterpret`; only display and
+behavior change, and writing is unaffected.
+"""
+stringify_data(data, datatype) = data
+stringify_data(data, dt::Ucs4Datatype) = reinterpret(materialized_eltype(dt), data)
+stringify_data(data, dt::AsciiDatatype) = reinterpret(materialized_eltype(dt), data)
+
+"""
+    materialized_eltype(datatype) -> Type
+
+Julia element type produced by materializing an array of the given ASDF `datatype`. This is
+[`UCS4String{N}`](@ref UCS4String) for [`Ucs4Datatype`](@ref), [`AsciiString{N}`](@ref AsciiString)
+for [`AsciiDatatype`](@ref), and `Type(datatype)` otherwise.
+"""
+materialized_eltype(dt) = Type(dt)
+materialized_eltype(dt::Ucs4Datatype) = UCS4String{dt.length}
+materialized_eltype(dt::AsciiDatatype) = AsciiString{dt.length}
 
 """
     TaggedMapping{D} <: AbstractDict
@@ -1062,7 +1181,7 @@ Allocates a dense array of shape `reverse(shape)` and fills it by calling `chunk
 """
 function Base.getindex(chunked_ndarray::ChunkedNDArray)
     shape = chunked_ndarray.shape
-    datatype = Type(chunked_ndarray.datatype)
+    datatype = materialized_eltype(chunked_ndarray.datatype)
     data = Array{datatype}(undef, reverse(shape)...)
     for chunk in chunked_ndarray.chunks
         start = CartesianIndex(reverse(chunk.start .+ 1)...)
@@ -1397,8 +1516,8 @@ const blocks::Blocks = Blocks()
 
 Infer the ASDF datatype from a Julia element type, used when writing arrays:
 
-- `NTuple{N, UInt8}` --> [`AsciiDatatype(N)`](@ref AsciiDatatype)
-- `NTuple{N, UInt32}` --> [`Ucs4Datatype(N)`](@ref Ucs4Datatype)
+- `NTuple{N, UInt8}` or [`AsciiString{N}`](@ref AsciiString) --> [`AsciiDatatype(N)`](@ref AsciiDatatype)
+- `NTuple{N, UInt32}` or [`UCS4String{N}`](@ref UCS4String) --> [`Ucs4Datatype(N)`](@ref Ucs4Datatype)
 - `NamedTuple` --> [`StructuredDatatype`](@ref) with fields inferred recursively
 - Any other type --> [`Datatype`](@ref) via the existing `type_datatype_dict` lookup
 
@@ -1420,6 +1539,11 @@ function infer_asdf_datatype(T::Type)::Union{Datatype, AsciiDatatype, Ucs4Dataty
         return Datatype(T)  # existing dict lookup, errors on unknown types
     end
 end
+
+# `UCS4String{N}`/`AsciiString{N}` round-trip to the datatypes they were materialized from; the
+# width `N` is the type parameter, recovered directly by dispatch (the inverse of `materialized_eltype`).
+infer_asdf_datatype(::Type{UCS4String{N}}) where {N} = Ucs4Datatype(N)
+infer_asdf_datatype(::Type{AsciiString{N}}) where {N} = AsciiDatatype(N)
 
 function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bool=false)
     datatype = infer_asdf_datatype(eltype(val.array))
