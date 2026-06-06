@@ -617,6 +617,28 @@ function asdf_datatype_yaml(dt::StructuredDatatype)
     end
 end
 
+"""
+    uses_float16(dt) -> Bool
+
+Whether the datatype `dt` (including any nested field of a [`StructuredDatatype`](@ref))
+is or contains a `Float16`. The `float16` scalar datatype was only added to the ndarray
+schema in version 1.1.0, so such arrays must be tagged `!core/ndarray-1.1.0` rather than
+`!core/ndarray-1.0.0`. `complex32` is `Complex{Float16}`, so it counts too.
+"""
+uses_float16(dt::Datatype) = dt === Datatype_float16 || dt === Datatype_complex32
+uses_float16(::Union{AsciiDatatype, Ucs4Datatype}) = false
+uses_float16(dt::StructuredDatatype) = any(uses_float16(f.datatype) for f in dt.fields)
+
+"""
+    min_ndarray_version(datatype) -> VersionNumber
+
+Lowest `!core/ndarray-X.Y.Z` schema version that can represent `datatype`: `float16` (and
+`complex32`, which contains it) require 1.1.0; every other datatype is valid from 1.0.0. This
+is the single source of truth shared by the reader (which rejects too-old tags) and the writer
+(which picks the tag version).
+"""
+min_ndarray_version(datatype) = uses_float16(datatype) ? v"1.1.0" : v"1.0.0"
+
 ################################################################################
 
 """
@@ -781,7 +803,16 @@ function make_construct_yaml_ndarray(block_headers::LazyBlockHeaders)
         byteorder = get(mapping, "byteorder", nothing)::Union{Nothing,AbstractString}
         offset = get(mapping, "offset", nothing)::Union{Nothing,Integer}
         strides = get(mapping, "strides", nothing)::Union{Nothing,AbstractVector{<:Integer}}
-        return NDArray(block_headers, source, data, shape, datatype, byteorder, offset, strides)
+        ndarray = NDArray(block_headers, source, data, shape, datatype, byteorder, offset, strides)
+        # The datatype must be representable by the tag's ndarray schema version. `float16`
+        # requires >= 1.1.0; `min_ndarray_version` is the single source of truth, shared with
+        # the writer.
+        required = min_ndarray_version(ndarray.datatype)
+        m = match(r"ndarray-(\d+\.\d+\.\d+)$", node.tag)
+        if m !== nothing && VersionNumber(m[1]) < required
+            error("`float16` datatype requires `!core/ndarray-$required` or newer, but tag is `$(node.tag)`")
+        end
+        return ndarray
     end
     return construct_yaml_ndarray
 end
@@ -1387,8 +1418,11 @@ function load_file(filename::AbstractString; extensions = false, validate_checks
     construct_yaml_ndarray_chunk = make_construct_yaml_ndarray_chunk(lazy_block_headers)
 
     asdf_constructors′ = copy(asdf_constructors)
-    asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-1.0.0"] = construct_yaml_ndarray
-    asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-1.1.0"] = construct_yaml_ndarray
+    # One constructor handles every ndarray schema version we accept; the per-datatype minimum
+    # is enforced inside it via `min_ndarray_version`.
+    for v in (v"1.0.0", v"1.1.0")
+        asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-$v"] = construct_yaml_ndarray
+    end
     asdf_constructors′["tag:stsci.edu:asdf/core/ndarray-chunk-1.0.0"] = construct_yaml_ndarray_chunk
     asdf_constructors′["tag:stsci.edu:asdf/core/chunked-ndarray-1.0.0"] = construct_yaml_chunked_ndarray
 
@@ -1573,7 +1607,9 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bo
         )
     end
     # println(io, YAML._indent("-\n", level), "!core/chunked-ndarray-1.0.0")
-    println(io, "!core/ndarray-1.0.0")
+    # Emit the lowest ndarray schema version that can represent this datatype (the reader's
+    # matching check in `make_construct_yaml_ndarray` uses the same `min_ndarray_version`).
+    println(io, "!core/ndarray-$(min_ndarray_version(datatype))")
     YAML._print(io, ndarray, level, ignore_level)
 end
 

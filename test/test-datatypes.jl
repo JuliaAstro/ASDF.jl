@@ -67,3 +67,57 @@ end
     # Plain scalar types defer to the existing dict lookup.
     @test ASDF.infer_asdf_datatype(Int64) == ASDF.Datatype_int64
 end
+
+@testset "float16 requires ndarray-1.1.0" begin
+    # A `float16` ndarray tagged with the older 1.0.0 schema must be rejected on load,
+    # since the `float16` scalar datatype only exists from ndarray-1.1.0 onward.
+    body = """
+    arr: !core/ndarray-1.0.0
+      data: [1.0, 2.0]
+      datatype: float16
+      shape: [2]
+    """
+    mktempdir() do dir
+        path = joinpath(dir, "f16.asdf")
+        open(path, "w") do io
+            print(io, """
+                #ASDF 1.0.0
+                #ASDF_STANDARD 1.6.0
+                %YAML 1.1
+                %TAG ! tag:stsci.edu:asdf/
+                ---
+                !core/asdf-1.1.0
+                $(body)
+                ...
+                """)
+        end
+        @test_throws "`float16` datatype requires `!core/ndarray-1.1.0` or newer" begin
+            ASDF.load_file(path)
+        end
+    end
+
+    # Tagged with 1.1.0, the same array loads cleanly and materializes as `Float16`.
+    mktempdir() do dir
+        path = joinpath(dir, "f16ok.asdf")
+        open(path, "w") do io
+            print(io, """
+                #ASDF 1.0.0
+                #ASDF_STANDARD 1.6.0
+                %YAML 1.1
+                %TAG ! tag:stsci.edu:asdf/
+                ---
+                !core/asdf-1.1.0
+                arr: !core/ndarray-1.1.0
+                  data: [1.0, 2.0]
+                  datatype: float16
+                  shape: [2]
+                ...
+                """)
+        end
+        af = ASDF.load_file(path)
+        arr = af["arr"][]
+        # `==` promotes by value, so pin the element type explicitly too.
+        @test eltype(arr) == Float16
+        @test arr == Float16[1.0, 2.0]
+    end
+end
