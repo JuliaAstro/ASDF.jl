@@ -1,5 +1,5 @@
 @testset "Show method for `ASDF.ASDFFile`" begin
-    af = load("blue_upchan_gain.00000000.asdf")
+    af = load(joinpath("data", "blue_upchan_gain.00000000.asdf"))
 
     @test occursin("blue_upchan_gain.00000000.asdf\n├─", sprint(show, MIME"text/plain"(), af))
 

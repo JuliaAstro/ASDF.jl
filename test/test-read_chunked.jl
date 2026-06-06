@@ -1,5 +1,5 @@
 @testset "Read ASDF file with chunked arrays" begin
-    asdf = load("chunking.asdf")
+    asdf = load(joinpath("data", "chunking.asdf"))
     println(YAML.write(asdf.metadata))
 
     map_tree(output, asdf.metadata)
