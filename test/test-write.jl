@@ -58,3 +58,23 @@ end
     @test ASDF.native2big_U8(0x05) == [0x05]
     @test ASDF.native2big_U8(5) == [0x05]
 end
+
+@testset "write preserves key order for non-OrderedDict documents" begin
+    dir = mktempdir(; cleanup = true)
+    path = joinpath(dir, "order.asdf")
+
+    # A `TaggedMapping` top-level document is an `AbstractDict` that is *not* an `OrderedDict`.
+    # The old `merge(document, ...)` degraded such inputs to an unordered `Dict`, scrambling key
+    # order; `write_file` now rebuilds an `OrderedDict` so insertion order is preserved. Use a
+    # deliberately non-alphabetical order so hash ordering would not match by coincidence.
+    doc = ASDF.TaggedMapping(
+        "tag:example.org:mylib/root-1.0.0",
+        ASDF.OrderedDict{Any, Any}("zebra" => 1, "apple" => 2, "mango" => 3),
+    )
+
+    ASDF.write_file(path, doc)
+    reloaded = ASDF.load_file(path)
+
+    # User keys keep their insertion order; the auto-inserted provenance entry comes last.
+    @test collect(keys(reloaded.metadata)) == ["zebra", "apple", "mango", "asdf_library"]
+end

@@ -883,6 +883,67 @@ function correct_byteorder(data, ::Ucs4Datatype, byteorder::Byteorder)
     return data
 end
 
+"""
+    TaggedMapping{D} <: AbstractDict
+    TaggedSequence{V} <: AbstractVector
+    TaggedScalar <: AbstractString
+
+A YAML node that carries an unrecognized (extension) `tag`, produced by [`ASDF.load_file`](@ref)
+when called with `extensions = true`. Each behaves exactly like its wrapped `value` — a mapping
+indexes and iterates as a dict, a sequence as a vector, a scalar as a string — while retaining
+the original `tag` so the node round-trips unchanged through [`ASDF.write_file`](@ref).
+"""
+struct TaggedMapping{D<:AbstractDict} <: AbstractDict{Any, Any}
+    tag::String
+    value::D
+end
+# `keys`, `values`, `haskey`, etc. fall back to these via the `AbstractDict` interface.
+# `get` is delegated explicitly because the `haskey`/`get` fallbacks need a 3-arg `get`.
+Base.getindex(m::TaggedMapping, k) = getindex(m.value, k)
+Base.get(m::TaggedMapping, k, default) = get(m.value, k, default)
+Base.length(m::TaggedMapping) = length(m.value)
+Base.iterate(m::TaggedMapping, state...) = iterate(m.value, state...)
+
+@doc (@doc TaggedMapping)
+struct TaggedSequence{V<:AbstractVector} <: AbstractVector{Any}
+    tag::String
+    value::V
+end
+Base.size(s::TaggedSequence) = size(s.value)
+Base.getindex(s::TaggedSequence, i::Int) = getindex(s.value, i)
+Base.IndexStyle(::Type{<:TaggedSequence}) = IndexLinear()
+
+@doc (@doc TaggedMapping)
+struct TaggedScalar <: AbstractString
+    tag::String
+    value::String
+end
+Base.ncodeunits(s::TaggedScalar) = ncodeunits(s.value)
+Base.codeunit(s::TaggedScalar) = codeunit(s.value)
+Base.codeunit(s::TaggedScalar, i::Integer) = codeunit(s.value, i)
+Base.isvalid(s::TaggedScalar, i::Integer) = isvalid(s.value, i)
+Base.iterate(s::TaggedScalar, i::Integer = 1) = iterate(s.value, i)
+
+# Serialize a tagged node by emitting its verbatim tag (`!<...>`) right before the wrapped
+# value, mirroring how `NDArrayWrapper` writes `!core/ndarray-1.0.0`. The YAML writer breaks the
+# line after the key only for a *non-empty* block collection, so the tag goes on its own
+# indented line there; for scalars and for empty collections (printed inline as `{}`/`[]`) the
+# writer leaves us on the key's line, so the tag stays inline. Both forms parse back to a tagged
+# node.
+function YAML._print(io::IO, val::Union{TaggedMapping, TaggedSequence}, level::Int = 0, ignore_level::Bool = false)
+    if isempty(val.value)
+        print(io, "!<", val.tag, "> ")
+        YAML._print(io, val.value, level, ignore_level)
+    else
+        print(io, YAML._indent("!<" * val.tag * ">\n", level, ignore_level))
+        YAML._print(io, val.value, level)
+    end
+end
+function YAML._print(io::IO, val::TaggedScalar, level::Int = 0, ignore_level::Bool = false)
+    print(io, "!<", val.tag, "> ")
+    YAML._print(io, val.value, level, ignore_level)
+end
+
 function YAML._print(io::IO, val::NDArray, level::Int = 0, ignore_level::Bool = false)
     # TODO: Get compression from underlying header block?
     YAML._print(io, NDArrayWrapper(val[]; compression = C_None), level, ignore_level)
@@ -1164,7 +1225,7 @@ Reads an ASDF file from disk.
 | Parameter           | Description                                                                                                      |
 | :------------------ | :--------------------------------------------------------------------------------------------------------------- |
 | `filename`          | Path to the `.asdf` file                                                                                         |
-| `extensions`        | When `true`, unknown YAML tags are parsed leniently (as maps, sequences, or scalars) instead of raising an error |
+| `extensions`        | When `true`, unknown YAML tags are parsed leniently (as maps, sequences, or scalars) instead of raising an error, and a warning naming each unrecognized tag is emitted (once per distinct tag). The tag is retained (see [`ASDF.TaggedMapping`](@ref)) so the node round-trips unchanged on write. |
 | `validate_checksum` | When `true`, each block's MD5 checksum is verified against the stored value                                      |
 
 Block data is located lazily. Block headers are scanned after the YAML is parsed, and array data (`ndarray`) is read only when [`Base.getindex(ndarray::NDArray)`](@ref) is called, i.e., `ndarray[]`.
@@ -1181,14 +1242,21 @@ function load_file(filename::AbstractString; extensions = false, validate_checks
     asdf_constructors["tag:stsci.edu:asdf/core/extension_metadata-1.0.0"] = ordered_map_constructor
 
     if extensions
-        # Use fallbacks for now
+        # Use fallbacks for now. Track which unrecognized tags we have already
+        # warned about so each distinct tag is reported at most once per load.
+        warned_tags = Set{Any}()
         asdf_constructors[nothing] = (constructor, node) -> begin
+            if node.tag ∉ warned_tags
+                push!(warned_tags, node.tag)
+                @warn "Unrecognized tag encountered while loading; falling back to a generic representation" tag = node.tag
+            end
+            # Wrap in a `Tagged*` type so the unrecognized tag is retained and round-trips on write.
             if node isa YAML.MappingNode
-                return YAML.construct_mapping(constructor, node)
+                return TaggedMapping(node.tag, YAML.construct_mapping(OrderedDict{Any, Any}, constructor, node))
             elseif node isa YAML.SequenceNode
-                return YAML.construct_sequence(constructor, node)
+                return TaggedSequence(node.tag, YAML.construct_sequence(constructor, node))
             else
-                return YAML.construct_scalar(constructor, node)
+                return TaggedScalar(node.tag, YAML.construct_scalar(constructor, node))
             end
         end
     end
@@ -1444,7 +1512,11 @@ function write_file(filename::AbstractString, document::AbstractDict)
     # - [ ] maybe make the document not a `Dict` but the stuff with the `metadata` that the writer returns?
     # - [ ] preserve insertion order? https://github.com/JuliaAstro/ASDF.jl/tree/ordered
     library = ASDFLibrary(software_name, software_author, software_homepage, software_version)
-    full_document = merge(document, OrderedDict{Any, Any}("asdf_library" => library))
+    # Build the output tree as an `OrderedDict` regardless of the input dict's concrete type, so
+    # insertion order is preserved (for a `TaggedMapping` document, `merge` would otherwise fall
+    # back to an unordered `Dict` and drop the order). The provenance entry is stamped last.
+    full_document = OrderedDict{Any, Any}(document)
+    full_document["asdf_library"] = library
 
     # Write YAML part of file
     io = open(filename, "w")
