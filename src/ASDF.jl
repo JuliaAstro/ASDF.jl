@@ -633,9 +633,9 @@ uses_float16(dt::StructuredDatatype) = any(uses_float16(f.datatype) for f in dt.
     min_ndarray_version(datatype) -> VersionNumber
 
 Lowest `!core/ndarray-X.Y.Z` schema version that can represent `datatype`: `float16` (and
-`complex32`, which contains it) require 1.1.0; every other datatype is valid from 1.0.0. This
-is the single source of truth shared by the reader (which rejects too-old tags) and the writer
-(which picks the tag version).
+`complex32`, which contains it) require 1.1.0; every other datatype is valid from 1.0.0. Used by
+the reader to reject arrays whose tag is too old for their datatype. (The writer always emits
+1.1.0, the schema version of the `#ASDF_STANDARD 1.6.0` files it produces.)
 """
 min_ndarray_version(datatype) = uses_float16(datatype) ? v"1.1.0" : v"1.0.0"
 
@@ -686,7 +686,7 @@ end
 
 A lazily-materialized N-dimensional array stored in an ASDF file, either as a binary block or inline within the ASDF file.
 
-`NDArray` is the in-memory representation of an `!core/ndarray-1.0.0` YAML node. It holds the array's shape, type, and layout metadata, but defers reading and decompressing block data until the array is explicitly materialized by calling [`Base.getindex(ndarray::NDArray)`](@ref).
+`NDArray` is the in-memory representation of an `!core/ndarray-X.Y.Z` YAML node. It holds the array's shape, type, and layout metadata, but defers reading and decompressing block data until the array is explicitly materialized by calling [`Base.getindex(ndarray::NDArray)`](@ref).
 
 # Fields
 
@@ -1092,7 +1092,7 @@ function shorthand_tag(tag::AbstractString)
 end
 
 # Serialize a tagged node by emitting its tag right before the wrapped value, mirroring how
-# `NDArrayWrapper` writes `!core/ndarray-1.0.0`. The YAML writer breaks the line after the key only
+# `NDArrayWrapper` writes `!core/ndarray-1.1.0`. The YAML writer breaks the line after the key only
 # for a *non-empty* block collection, so the tag goes on its own indented line there; for scalars
 # and for empty collections (printed inline as `{}`/`[]`) the writer leaves us on the key's line,
 # so the tag stays inline. Both forms parse back to a tagged node.
@@ -1626,9 +1626,11 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bo
         )
     end
     # println(io, YAML._indent("-\n", level), "!core/chunked-ndarray-1.0.0")
-    # Emit the lowest ndarray schema version that can represent this datatype (the reader's
-    # matching check in `make_construct_yaml_ndarray` uses the same `min_ndarray_version`).
-    println(io, "!core/ndarray-$(min_ndarray_version(datatype))")
+    # Always emit ndarray-1.1.0: the file we write declares `#ASDF_STANDARD 1.6.0`, whose ndarray
+    # schema is 1.1.0, and 1.1.0 is a superset of 1.0.0 so it represents every datatype we support
+    # (`min_ndarray_version` never exceeds it). This keeps `float16` arrays valid and round-trips
+    # 1.1.0-tagged arrays unchanged.
+    println(io, "!core/ndarray-1.1.0")
     YAML._print(io, ndarray, level, ignore_level)
 end
 
