@@ -195,6 +195,41 @@ end
     @test isempty(md["empty_sequence"])
 end
 
+@testset "core container tags roundtrip" begin
+    # The known core container tags (`software`, `extension_metadata`) carry no special behavior,
+    # but their tag is provenance worth keeping. They are retained even with the default
+    # `extensions = false`, and survive a write/reload in the `!core/...` shorthand.
+    tag_history = """
+    history:
+      extensions:
+      - !core/extension_metadata-1.0.0
+        extension_class: "asdf.extension._manifest.ManifestExtension"
+        extension_uri: "asdf://asdf-format.org/core/extensions/core-1.6.0"
+        software: !core/software-1.0.0
+          name: "asdf"
+          version: "4.1.0"
+    """
+
+    af = load_tag(tag_history)  # extensions = false
+    ext = af.metadata["history"]["extensions"][1]
+    @test ext isa ASDF.TaggedMapping
+    @test ext.tag == "tag:stsci.edu:asdf/core/extension_metadata-1.0.0"
+    @test ext["software"] isa ASDF.TaggedMapping
+    @test ext["software"].tag == "tag:stsci.edu:asdf/core/software-1.0.0"
+    @test ext["extension_class"] == "asdf.extension._manifest.ManifestExtension"
+
+    af2 = mktempdir() do dir
+        path = joinpath(dir, "roundtrip.asdf")
+        ASDF.write_file(path, af.metadata)
+        # The tag is written in the `!core/...` shorthand declared by the `%TAG` directive.
+        @test occursin("!core/extension_metadata-1.0.0", read(path, String))
+        ASDF.load_file(path)
+    end
+    ext2 = af2.metadata["history"]["extensions"][1]
+    @test ext2.tag == "tag:stsci.edu:asdf/core/extension_metadata-1.0.0"
+    @test ext2["software"].tag == "tag:stsci.edu:asdf/core/software-1.0.0"
+end
+
 @testset "tagged node accessors" begin
     # The `Tagged*` wrappers delegate their collection / string interfaces to the wrapped
     # value. Loading round-trips them (see the roundtrip testset above), but the individual

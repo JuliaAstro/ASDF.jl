@@ -12,12 +12,15 @@ asdf_library: !core/software-1.0.0
   version: "2.0.0"
 history:
   extensions:
-    - extension_class: "asdf.extension._manifest.ManifestExtension"
+    - !core/extension_metadata-1.0.0
+      extension_class: "asdf.extension._manifest.ManifestExtension"
       extension_uri: "asdf://asdf-format.org/core/extensions/core-1.6.0"
       manifest_software:
+        !core/software-1.0.0
         name: "asdf_standard"
         version: "1.1.1"
       software:
+        !core/software-1.0.0
         name: "asdf"
         version: "4.1.0"
 float: 3.14

@@ -1038,10 +1038,13 @@ materialized_eltype(dt::AsciiDatatype) = AsciiString{dt.length}
     TaggedSequence{V} <: AbstractVector
     TaggedScalar <: AbstractString
 
-A YAML node that carries an unrecognized (extension) `tag`, produced by [`ASDF.load_file`](@ref)
-when called with `extensions = true`. Each behaves exactly like its wrapped `value` — a mapping
-indexes and iterates as a dict, a sequence as a vector, a scalar as a string — while retaining
-the original `tag` so the node round-trips unchanged through [`ASDF.write_file`](@ref).
+A YAML node that carries a `tag` with no dedicated Julia representation, produced by
+[`ASDF.load_file`](@ref). This covers two cases: recognized core container tags such as
+`!core/software-1.0.0` and `!core/extension_metadata-1.0.0`, which are kept for their provenance
+but otherwise behave as plain mappings; and, when loading with `extensions = true`, unrecognized
+extension tags that would otherwise raise an error. Each behaves exactly like its wrapped `value`.
+A mapping indexes and iterates as a dict, a sequence as a vector, a scalar as a string, while
+retaining the original `tag` so the node round-trips unchanged through [`ASDF.write_file`](@ref).
 """
 struct TaggedMapping{D<:AbstractDict} <: AbstractDict{Any, Any}
     tag::String
@@ -1053,6 +1056,11 @@ Base.getindex(m::TaggedMapping, k) = getindex(m.value, k)
 Base.get(m::TaggedMapping, k, default) = get(m.value, k, default)
 Base.length(m::TaggedMapping) = length(m.value)
 Base.iterate(m::TaggedMapping, state...) = iterate(m.value, state...)
+# A `TaggedMapping` wraps an `OrderedDict`, so dropping the tag back to one preserves insertion
+# order. Define the conversion explicitly to bypass OrderedCollections' generic (and deprecated)
+# `AbstractDict`→`OrderedDict` path, which fires when the top-level document tag is stored into
+# `ASDFFile.metadata`.
+Base.convert(::Type{OrderedDict{Any, Any}}, m::TaggedMapping) = OrderedDict{Any, Any}(m.value)
 
 @doc (@doc TaggedMapping)
 struct TaggedSequence{V<:AbstractVector} <: AbstractVector{Any}
@@ -1074,23 +1082,31 @@ Base.codeunit(s::TaggedScalar, i::Integer) = codeunit(s.value, i)
 Base.isvalid(s::TaggedScalar, i::Integer) = isvalid(s.value, i)
 Base.iterate(s::TaggedScalar, i::Integer = 1) = iterate(s.value, i)
 
-# Serialize a tagged node by emitting its verbatim tag (`!<...>`) right before the wrapped
-# value, mirroring how `NDArrayWrapper` writes `!core/ndarray-1.0.0`. The YAML writer breaks the
-# line after the key only for a *non-empty* block collection, so the tag goes on its own
-# indented line there; for scalars and for empty collections (printed inline as `{}`/`[]`) the
-# writer leaves us on the key's line, so the tag stays inline. Both forms parse back to a tagged
-# node.
+# Render a tag for output. An ASDF file declares `%TAG ! tag:stsci.edu:asdf/`, so tags under that
+# namespace are written in the `!core/...` shorthand (matching how the writer emits
+# `!core/asdf-1.1.0`, `!core/ndarray-...`, etc.); any other tag uses the verbose `!<uri>` form.
+# Both parse back to the same tag.
+function shorthand_tag(tag::AbstractString)
+    prefix = "tag:stsci.edu:asdf/"
+    return startswith(tag, prefix) ? "!" * chopprefix(tag, prefix) : "!<" * tag * ">"
+end
+
+# Serialize a tagged node by emitting its tag right before the wrapped value, mirroring how
+# `NDArrayWrapper` writes `!core/ndarray-1.0.0`. The YAML writer breaks the line after the key only
+# for a *non-empty* block collection, so the tag goes on its own indented line there; for scalars
+# and for empty collections (printed inline as `{}`/`[]`) the writer leaves us on the key's line,
+# so the tag stays inline. Both forms parse back to a tagged node.
 function YAML._print(io::IO, val::Union{TaggedMapping, TaggedSequence}, level::Int = 0, ignore_level::Bool = false)
     if isempty(val.value)
-        print(io, "!<", val.tag, "> ")
+        print(io, shorthand_tag(val.tag), " ")
         YAML._print(io, val.value, level, ignore_level)
     else
-        print(io, YAML._indent("!<" * val.tag * ">\n", level, ignore_level))
+        print(io, YAML._indent(shorthand_tag(val.tag) * "\n", level, ignore_level))
         YAML._print(io, val.value, level)
     end
 end
 function YAML._print(io::IO, val::TaggedScalar, level::Int = 0, ignore_level::Bool = false)
-    print(io, "!<", val.tag, "> ")
+    print(io, shorthand_tag(val.tag), " ")
     YAML._print(io, val.value, level, ignore_level)
 end
 
@@ -1384,12 +1400,15 @@ Block data is located lazily. Block headers are scanned after the YAML is parsed
     The file handle opened by `load_file` is retained for the lifetime of the returned [`ASDF.ASDFFile`](@ref) so that block data can be read on demand. Do not move, truncate, or overwrite the source file while any [`ASDF.NDArray`](@ref) from it may still be accessed.
 """
 function load_file(filename::AbstractString; extensions = false, validate_checksum = true)
-    ordered_map_constructor = (constructor, node) -> YAML.construct_mapping(OrderedDict{Any,Any}, constructor, node)
+    # These core container tags carry no behavior of their own (we just want their mapping
+    # contents), but the tag itself is provenance worth keeping, so wrap them in a `TaggedMapping`
+    # that round-trips the tag on write.
+    tagged_map_constructor = (constructor, node) -> TaggedMapping(node.tag, YAML.construct_mapping(OrderedDict{Any,Any}, constructor, node))
     asdf_constructors = copy(YAML.default_yaml_constructors)
     delete!(asdf_constructors, "tag:yaml.org,2002:map")  # Let dicttype= handle plain maps
-    asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = ordered_map_constructor
-    asdf_constructors["tag:stsci.edu:asdf/core/software-1.0.0"] = ordered_map_constructor
-    asdf_constructors["tag:stsci.edu:asdf/core/extension_metadata-1.0.0"] = ordered_map_constructor
+    asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = tagged_map_constructor
+    asdf_constructors["tag:stsci.edu:asdf/core/software-1.0.0"] = tagged_map_constructor
+    asdf_constructors["tag:stsci.edu:asdf/core/extension_metadata-1.0.0"] = tagged_map_constructor
 
     if extensions
         # Use fallbacks for now. Track which unrecognized tags we have already
