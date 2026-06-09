@@ -59,6 +59,44 @@ end
     @test ASDF.native2big_U8(5) == [0x05]
 end
 
+@testset "floats use YAML-1.1-compliant exponents" begin
+    # YAML 1.1 only reads an exponent as a float when it has an explicit sign, so the writer must
+    # emit `2.998e+8`, not Julia's `2.998e8` (which strict parsers, e.g. the Python `asdf`, read
+    # back as a *string*). The fix must not cost precision or touch already-signed exponents.
+    @test ASDF.yaml_float_string(2.998e8) == "2.998e+8"
+    @test ASDF.yaml_float_string(6.022e23) == "6.022e+23"
+    @test ASDF.yaml_float_string(-5.204446308234682e7) == "-5.204446308234682e+7"
+    @test ASDF.yaml_float_string(1.5e-7) == "1.5e-7"
+    @test ASDF.yaml_float_string(1.0) == "1.0"
+    @test ASDF.yaml_float_string(Float32(5.2e7)) == "5.2e+7"
+    @test ASDF.yaml_float_string(NaN) == ".NaN"
+    @test ASDF.yaml_float_string(Inf) == ".inf"
+    @test ASDF.yaml_float_string(-Inf) == "-.inf"
+
+    # End-to-end: the value is written with a signed exponent and reloads as an exact `Float64`
+    # (not a string), which is what makes the file valid for the Python `asdf` reader.
+    dir = mktempdir(; cleanup = true)
+    path = joinpath(dir, "sci.asdf")
+    value = -5.204446308234682e7
+    ASDF.write_file(path, Dict{Any, Any}("spatial_x" => value))
+    @test occursin("spatial_x: -5.204446308234682e+7", read(path, String))
+
+    reloaded = ASDF.load_file(path)["spatial_x"]
+    @test reloaded isa Float64
+    @test reloaded == value
+
+    # Inline ndarray data must get the same treatment: its element text is produced by
+    # `NDArrayWrapper`'s own writer, which routes the slices back through the float pass.
+    arr = [2.998e8 6.022e23]
+    ipath = joinpath(dir, "inline.asdf")
+    ASDF.write_file(ipath, Dict{Any, Any}("inline_arr" => ASDF.NDArrayWrapper(arr; inline = true)))
+    itext = read(ipath, String)
+    @test occursin("2.998e+8", itext)
+    @test occursin("6.022e+23", itext)
+    @test !occursin("2.998e8", itext)
+    @test ASDF.load_file(ipath)["inline_arr"][] == arr
+end
+
 @testset "write preserves key order for non-OrderedDict documents" begin
     dir = mktempdir(; cleanup = true)
     path = joinpath(dir, "order.asdf")

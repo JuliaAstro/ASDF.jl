@@ -1115,6 +1115,34 @@ function YAML._print(io::IO, val::NDArray, level::Int = 0, ignore_level::Bool = 
     YAML._print(io, NDArrayWrapper(val[]; compression = C_None), level, ignore_level)
 end
 
+# YAML 1.1 only resolves a float written in exponential form when its exponent carries an explicit
+# sign (`6.0e+23`, not `6.0e23`). Julia's `string` omits the `+`, and YAML.jl writes that verbatim,
+# so strict parsers (e.g., PyYAML used by the Python impl of `asdf`) read such values back as plain
+# *strings*, failing schema validation. Inserting the sign fixes the round-trip while keeping
+# Julia's shortest round-trippable digits. (`NaN`/`Inf` keep YAML's `.nan`/`.inf` spellings.)
+function yaml_float_string(val::AbstractFloat)
+    isfinite(val) || return isnan(val) ? ".NaN" : (val > 0 ? ".inf" : "-.inf")
+    return replace(string(val), r"[eE](?=[0-9])" => "e+")
+end
+
+# A scalar already rendered to its exact YAML text. Its `_print` emits that text verbatim, unlike a
+# `String` (which YAML.jl would quote). We cannot instead override YAML.jl's own `_print(::Float64)`:
+# replacing another module's method is rejected during precompilation, and doing it from `__init__`
+# breaks downstream incremental compilation. So floats are rewritten to this additive type before
+# writing (see `yaml_compliant`).
+struct YAMLScalar
+    text::String
+end
+YAML._print(io::IO, val::YAMLScalar, level::Int = 0, ignore_level::Bool = false) = println(io, val.text)
+
+# Pre-write pass: recursively rewrite a document so every float is emitted in YAML-1.1-compliant form.
+yaml_compliant(val::AbstractFloat)  = YAMLScalar(yaml_float_string(val))
+yaml_compliant(val::TaggedMapping)  = TaggedMapping(val.tag, yaml_compliant(val.value))
+yaml_compliant(val::TaggedSequence) = TaggedSequence(val.tag, yaml_compliant(val.value))
+yaml_compliant(val::AbstractDict)   = OrderedDict{Any, Any}(k => yaml_compliant(v) for (k, v) in val)
+yaml_compliant(val::AbstractArray)  = map(yaml_compliant, val)
+yaml_compliant(val) = val
+
 ################################################################################
 
 """
@@ -1605,7 +1633,8 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bo
         # Split multidimensional arrays into array-of-arrays
         data = eachslice(data; dims=Tuple(2:ndims(data)))
         ndarray = OrderedDict(
-            :data => data,
+            # Route inline data through the float pass so its elements get YAML-1.1 exponents too.
+            :data => yaml_compliant(data),
             :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
             :datatype => asdf_datatype_yaml(datatype),#string(Datatype(eltype(val.array))),
             # :offset => 0::Integer,
@@ -1698,6 +1727,8 @@ function write_file(filename::AbstractString, document::AbstractDict)
     # back to an unordered `Dict` and drop the order). The provenance entry is stamped last.
     full_document = OrderedDict{Any, Any}(document)
     full_document["asdf_library"] = library
+    # Rewrite floats so their exponents are YAML-1.1 compliant (see `yaml_compliant`).
+    full_document = yaml_compliant(full_document)
 
     # Write YAML part of file
     io = open(filename, "w")
