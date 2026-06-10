@@ -1056,6 +1056,17 @@ Base.getindex(m::TaggedMapping, k) = getindex(m.value, k)
 Base.get(m::TaggedMapping, k, default) = get(m.value, k, default)
 Base.length(m::TaggedMapping) = length(m.value)
 Base.iterate(m::TaggedMapping, state...) = iterate(m.value, state...)
+# Mutation is delegated to the wrapped value so a loaded node can be edited in place (e.g.
+# `af["asdf_library"]["version"] = "3"`) while retaining the tag; without these, `AbstractDict`
+# has no mutating fallbacks and such edits would `MethodError`.
+Base.setindex!(m::TaggedMapping, v, k) = (setindex!(m.value, v, k); m)
+Base.delete!(m::TaggedMapping, k) = (delete!(m.value, k); m)
+Base.empty!(m::TaggedMapping) = (empty!(m.value); m)
+Base.get(f::Base.Callable, m::TaggedMapping, k) = get(f, m.value, k)
+Base.get!(m::TaggedMapping, k, default) = get!(m.value, k, default)
+Base.get!(f::Base.Callable, m::TaggedMapping, k) = get!(f, m.value, k)
+Base.pop!(m::TaggedMapping, k) = pop!(m.value, k)
+Base.pop!(m::TaggedMapping, k, default) = pop!(m.value, k, default)
 # A `TaggedMapping` wraps an `OrderedDict`, so dropping the tag back to one preserves insertion
 # order. Define the conversion explicitly to bypass OrderedCollections' generic (and deprecated)
 # `AbstractDict`→`OrderedDict` path, which fires when the top-level document tag is stored into
@@ -1070,6 +1081,16 @@ end
 Base.size(s::TaggedSequence) = size(s.value)
 Base.getindex(s::TaggedSequence, i::Int) = getindex(s.value, i)
 Base.IndexStyle(::Type{<:TaggedSequence}) = IndexLinear()
+# As with `TaggedMapping`, delegate mutation so a loaded sequence stays editable in place. The
+# `AbstractArray` `setindex!` fallback errors for a generic wrapped vector, and the resizing methods
+# have no fallback at all.
+Base.setindex!(s::TaggedSequence, v, i::Int) = (setindex!(s.value, v, i); s)
+Base.push!(s::TaggedSequence, items...) = (push!(s.value, items...); s)
+Base.pop!(s::TaggedSequence) = pop!(s.value)
+Base.insert!(s::TaggedSequence, i::Integer, v) = (insert!(s.value, i, v); s)
+Base.deleteat!(s::TaggedSequence, i) = (deleteat!(s.value, i); s)
+Base.resize!(s::TaggedSequence, n::Integer) = (resize!(s.value, n); s)
+Base.empty!(s::TaggedSequence) = (empty!(s.value); s)
 
 @doc (@doc TaggedMapping)
 struct TaggedScalar <: AbstractString
