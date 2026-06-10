@@ -1325,15 +1325,22 @@ struct ASDFTreeNode
     value::Any
 end
 
+# Only mappings are walked; vectors (data arrays and lists of containers alike) are leaf nodes,
+# summarized by their shape rather than expanded element-by-element.
 AbstractTrees.children(n::ASDFTreeNode) =
-    n.value isa ASDFFile         ? [ASDFTreeNode(k, v) for (k, v) in n.value.metadata] :
-    n.value isa AbstractDict     ? [ASDFTreeNode(k, v) for (k, v) in sort(collect(n.value); by = first)] : ()
+    n.value isa ASDFFile     ? [ASDFTreeNode(k, v) for (k, v) in n.value.metadata] :
+    n.value isa AbstractDict ? [ASDFTreeNode(k, v) for (k, v) in n.value] :
+                               ()
+
+# Compact, module-unqualified type label for a vector node.
+vector_typelabel(v::Vector) = "Vector{$(nameof(eltype(v)))}"
+vector_typelabel(v::AbstractVector) = string(nameof(typeof(v)))
 
 AbstractTrees.printnode(io::IO, n::ASDFTreeNode) =
-    n.key === nothing            ? print(io, basename(n.value.filename))                                         :
-    n.value isa AbstractDict     ? print(io, n.key, "::",  typeof(n.key))                              :
-    n.value isa NDArray          ? print(io, n.key, "::",  typeof(n.value), " | shape = ", n.value.shape) :
-    n.value isa AbstractVector   ? print(io, n.key, "::" , typeof(n.value), " | shape = ", size(n.value)) :
+    n.key === nothing            ? print(io, basename(n.value.filename))                                          :
+    n.value isa AbstractDict     ? print(io, n.key, "::",  nameof(typeof(n.value)))                              :
+    n.value isa NDArray          ? print(io, n.key, "::",  nameof(typeof(n.value)), " | shape = ", n.value.shape, ", datatype = ", materialized_eltype(n.value.datatype)) :
+    n.value isa AbstractVector   ? print(io, n.key, "::",  vector_typelabel(n.value), " | shape = ", size(n.value)) :
                                    print(io, n.key, "::",  typeof(n.value), " | ", n.value)
 
 """
@@ -1408,27 +1415,27 @@ long.asdf
 ├─ field_23::Vector{Float64} | shape = (10,)
 ├─ field_24::Vector{Float64} | shape = (10,)
 ├─ field_25::Vector{Float64} | shape = (10,)
-└─ asdf_library::String
+└─ asdf_library::TaggedMapping
+   ├─ name::String | ASDF.jl
    ├─ author::String | Erik Schnetter <schnetter@gmail.com>
    ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
-   ├─ name::String | ASDF.jl
    └─ version::String | 2.0.0
 ```
 """
 function info(io::IO, af::ASDFFile; max_rows = 20)
     root = ASDFTreeNode(nothing, af)
-    n_rows = sum(1 for _ in AbstractTrees.PostOrderDFS(root))
+    # Render the full tree, then count/cut by the *rendered* lines. Counting nodes separately (e.g.
+    # via `PostOrderDFS`) overcounts whenever `print_tree` collapses deep subtrees, making the
+    # "more rows" tally larger than the number of lines actually withheld.
+    buf = IOBuffer()
+    AbstractTrees.print_tree(buf, root)
+    lines = split(String(take!(buf)), '\n', keepempty = false)
 
-    if n_rows ≤ max_rows
-        AbstractTrees.print_tree(io, root)
+    if length(lines) ≤ max_rows
+        foreach(l -> println(io, l), lines)
     else
-        # Store entire tree in `buf`
-        buf = IOBuffer()
-        AbstractTrees.print_tree(buf, root)
-        # Only print up to `n_rows` lines from that buffer
-        lines = split(String(take!(buf)), '\n', keepempty = false)
         foreach(l -> println(io, l), Iterators.take(lines, max_rows))
-        println(io, "  ⋮  (", n_rows - max_rows, ") more rows")
+        println(io, "  ⋮  (", length(lines) - max_rows, ") more rows")
     end
 end
 info(af; kwargs...) = info(stdout, af; kwargs...)
@@ -1526,10 +1533,10 @@ myfile.asdf
 ├─ field_3::Vector{Float64} | shape = (10,)
 ├─ field_4::Vector{Float64} | shape = (10,)
 ├─ field_5::Vector{Float64} | shape = (10,)
-└─ asdf_library::String
+└─ asdf_library::TaggedMapping
+   ├─ name::String | ASDF.jl
    ├─ author::String | Erik Schnetter <schnetter@gmail.com>
    ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
-   ├─ name::String | ASDF.jl
    └─ version::String | 2.0.0
 ```
 """

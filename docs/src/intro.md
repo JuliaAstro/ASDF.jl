@@ -75,13 +75,13 @@ julia> af = load("intro.asdf")
 intro.asdf
 ├─ field_1::Vector{Int64} | shape = (4,)
 ├─ field_2::Vector{String} | shape = (4,)
-├─ field_3::String
+├─ field_3::OrderedDict
 │  ├─ field_3a::Vector{String} | shape = (3,)
 │  └─ field_3b::Vector{Float64} | shape = (3,)
-└─ asdf_library::String
+└─ asdf_library::TaggedMapping
+   ├─ name::String | ASDF.jl
    ├─ author::String | Erik Schnetter <schnetter@gmail.com>
    ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
-   ├─ name::String | ASDF.jl
    └─ version::String | 2.0.0
 ```
 
@@ -162,14 +162,14 @@ julia> save("intro_compressed.asdf", af_payload)
 
 julia> af = load("intro_compressed.asdf")
 intro_compressed.asdf
-├─ meta::String
-│  └─ my::String
+├─ meta::OrderedDict
+│  └─ my::OrderedDict
 │     └─ nested::String | metadata
-├─ data::ASDF.NDArray | shape = [4]
-└─ asdf_library::String
+├─ data::NDArray | shape = [4], datatype = Int64
+└─ asdf_library::TaggedMapping
+   ├─ name::String | ASDF.jl
    ├─ author::String | Erik Schnetter <schnetter@gmail.com>
    ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
-   ├─ name::String | ASDF.jl
    └─ version::String | 2.0.0
 ```
 
@@ -186,7 +186,7 @@ intro_compressed.asdf
     meta:
       my:
         nested: "metadata"
-    data: !core/ndarray-1.0.0
+    data: !core/ndarray-1.1.0
       source: 0
       shape:
         - 4
