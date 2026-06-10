@@ -1,6 +1,10 @@
 using ASDF
-using Documenter
+using Documenter, DocumenterInterLinks
 using Documenter.Remotes: GitHub
+
+links = InterLinks(
+    "PythonCall" => "https://juliapy.github.io/PythonCall.jl/stable/",
+)
 
 makedocs(;
     modules = [ASDF],
@@ -17,9 +21,11 @@ makedocs(;
             "JWST" => "examples/jwst.md",
             "Roman" => "examples/roman.md",
     ],
+        "Interoperability" => "interop.md",
         "API" => "api.md",
     ],
     doctest = false,
+    plugins = [links],
 )
 
 deploydocs(;

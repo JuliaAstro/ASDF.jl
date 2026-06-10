@@ -4,6 +4,7 @@ AWS = "fbe9abb3-538b-5e4e-ba9e-bc94f4f92ebc"
 AWSS3 = "1c724243-ef5b-51ab-93f4-b0a88ac62a95"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+DocumenterInterLinks = "d12716ef-a0f6-4df4-a9f1-a5a34e75c656"
 Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 
