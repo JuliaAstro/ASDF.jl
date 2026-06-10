@@ -260,3 +260,54 @@ end
     @test !isvalid(tsc, 99)
     @test tsc == "3.14"
 end
+
+@testset "tagged node mutation" begin
+    # The `Tagged*` containers delegate mutation to the wrapped value so a loaded node can be
+    # edited in place while keeping its tag. Each mutating method is pinned down here; the
+    # in-place mutators (`setindex!`, `delete!`, `push!`, ...) must also *return the wrapper*
+    # (not the bare wrapped value) so chained/conventional usage keeps the tag.
+
+    tm = ASDF.TaggedMapping("tag:example.org:mylib/widget-1.0.0", Dict{Any, Any}("a" => 1))
+
+    @test (tm["b"] = 2) == 2 # `setindex!` returns the assigned value, per Base
+    @test setindex!(tm, 3, "c") === tm # and the method itself returns the wrapper
+    @test tm["b"] == 2 && tm["c"] == 3
+    @test tm isa ASDF.TaggedMapping && tm.tag == "tag:example.org:mylib/widget-1.0.0"
+
+    @test delete!(tm, "c") === tm
+    @test !haskey(tm, "c")
+
+    # `get`/`get!` with a `Callable` default (the function is called only on a miss).
+    @test get(() -> 99, tm, "a") == 1
+    @test get(() -> 99, tm, "missing") == 99
+    @test !haskey(tm, "missing") # `get` with a default does not insert
+    @test get!(tm, "a", -1) == 1 # Present: returns existing, no overwrite
+    @test get!(tm, "d", 4) == 4 && tm["d"] == 4 # Absent: inserts default
+    @test get!(() -> 5, tm, "e") == 5 && tm["e"] == 5 # Absent: inserts f()
+
+    @test pop!(tm, "d") == 4 && !haskey(tm, "d")
+    @test pop!(tm, "gone", :fallback) == :fallback
+
+    @test empty!(tm) === tm
+    @test isempty(tm) && tm.tag == "tag:example.org:mylib/widget-1.0.0"
+
+    ts = ASDF.TaggedSequence("tag:example.org:mylib/series-1.0.0", Any["alpha"])
+
+    @test (ts[1] = "ALPHA") == "ALPHA"
+    @test setindex!(ts, "beta", 1) === ts
+    @test ts[1] == "beta"
+
+    @test push!(ts, "gamma", "delta") === ts # Variadic
+    @test length(ts) == 3
+    @test pop!(ts) == "delta" && length(ts) == 2
+
+    @test insert!(ts, 1, "zero") === ts
+    @test ts[1] == "zero"
+    @test deleteat!(ts, 1) === ts
+    @test ts[1] == "beta"
+
+    @test resize!(ts, 1) === ts
+    @test length(ts) == 1
+    @test empty!(ts) === ts
+    @test isempty(ts) && ts.tag == "tag:example.org:mylib/series-1.0.0"
+end
