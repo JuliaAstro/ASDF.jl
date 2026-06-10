@@ -69,8 +69,9 @@ end
 end
 
 @testset "float16 requires ndarray-1.1.0" begin
-    # A `float16` ndarray tagged with the older 1.0.0 schema must be rejected on load,
-    # since the `float16` scalar datatype only exists from ndarray-1.1.0 onward.
+    # A `float16` ndarray tagged with the older 1.0.0 schema is non-conformant (the `float16`
+    # scalar datatype only exists from ndarray-1.1.0 onward), but other implementations emit it,
+    # so we warn and load it leniently rather than reject the file.
     body = """
     arr: !core/ndarray-1.0.0
       data: [1.0, 2.0]
@@ -91,9 +92,12 @@ end
                 ...
                 """)
         end
-        @test_throws "`float16` datatype requires `!core/ndarray-1.1.0` or newer" begin
-            ASDF.load_file(path)
+        local af
+        @test_logs (:warn, r"older than the schema version") match_mode = :any begin
+            af = ASDF.load_file(path)
         end
+        # Despite the too-old tag, the array still loads and materializes as `Float16`.
+        @test af["arr"][] == Float16[1.0, 2.0]
     end
 
     # Tagged with 1.1.0, the same array loads cleanly and materializes as `Float16`.

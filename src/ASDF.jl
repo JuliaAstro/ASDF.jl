@@ -794,6 +794,9 @@ function NDArray(
 end
 
 function make_construct_yaml_ndarray(block_headers::LazyBlockHeaders)
+    # Track which too-old tags we have already warned about so each distinct tag is reported at
+    # most once per load (a file may hold many ndarray nodes sharing one non-conformant tag).
+    warned_tags = Set{String}()
     function construct_yaml_ndarray(constructor::YAML.Constructor, node::YAML.Node)
         mapping = YAML.construct_mapping(constructor, node)
         source = get(mapping, "source", nothing)::Union{Nothing,Integer}
@@ -804,13 +807,15 @@ function make_construct_yaml_ndarray(block_headers::LazyBlockHeaders)
         offset = get(mapping, "offset", nothing)::Union{Nothing,Integer}
         strides = get(mapping, "strides", nothing)::Union{Nothing,AbstractVector{<:Integer}}
         ndarray = NDArray(block_headers, source, data, shape, datatype, byteorder, offset, strides)
-        # The datatype must be representable by the tag's ndarray schema version. `float16`
-        # requires >= 1.1.0; `min_ndarray_version` is the single source of truth, shared with
-        # the writer.
+        # The datatype should be representable by the tag's ndarray schema version: `float16` (and
+        # `complex32`) were only added in 1.1.0. `min_ndarray_version` is the single source of truth,
+        # shared with the writer. A too-old tag is non-conformant, but other implementations (e.g.
+        # asdf-cxx) emit it, so we warn and load leniently rather than reject the file.
         required = min_ndarray_version(ndarray.datatype)
         m = match(r"ndarray-(\d+\.\d+\.\d+)$", node.tag)
-        if m !== nothing && VersionNumber(m[1]) < required
-            error("`float16` datatype requires `!core/ndarray-$required` or newer, but tag is `$(node.tag)`")
+        if m !== nothing && VersionNumber(m[1]) < required && node.tag ∉ warned_tags
+            push!(warned_tags, node.tag)
+            @warn "ndarray tag is older than the schema version its datatype requires; loading leniently" tag = node.tag required = "!core/ndarray-$required"
         end
         return ndarray
     end
