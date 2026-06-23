@@ -35,7 +35,7 @@ The saved file contains the following human-readable contents:
     ```jldoctest intro
     julia> read("intro.asdf", String) |> print
     #ASDF 1.0.0
-    #ASDF_STANDARD 1.2.0
+    #ASDF_STANDARD 1.6.0
     # This is an ASDF file <https://asdf-standard.readthedocs.io/>
     %YAML 1.1
     %TAG ! tag:stsci.edu:asdf/
@@ -60,16 +60,11 @@ The saved file contains the following human-readable contents:
         - 1.0
         - 2.0
         - 3.0
-    asdf/library: !core/software-1.0.0
+    asdf_library: !core/software-1.0.0
       name: "ASDF.jl"
       author: "Erik Schnetter <schnetter@gmail.com>"
       homepage: "https://github.com/JuliaAstro/ASDF.jl"
       version: "2.0.0"
-    ...
-    #ASDF BLOCK INDEX
-    %YAML 1.1
-    ---
-    []
     ...
     ```
 
@@ -80,13 +75,13 @@ julia> af = load("intro.asdf")
 intro.asdf
 ├─ field_1::Vector{Int64} | shape = (4,)
 ├─ field_2::Vector{String} | shape = (4,)
-├─ field_3::String
+├─ field_3::OrderedDict
 │  ├─ field_3a::Vector{String} | shape = (3,)
 │  └─ field_3b::Vector{Float64} | shape = (3,)
-└─ asdf/library::String
+└─ asdf_library::TaggedMapping
+   ├─ name::String | ASDF.jl
    ├─ author::String | Erik Schnetter <schnetter@gmail.com>
    ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
-   ├─ name::String | ASDF.jl
    └─ version::String | 2.0.0
 ```
 
@@ -100,7 +95,7 @@ intro.asdf
   ⋮  (8) more rows
 ```
 
-It contains a `metadata` field, which is a new dictionary that merges information about this library (stored under the `asdf/library` key) with the original user-defined `af_payload` dictionary. For convenience, `af.metadata[<key>]` can be accessed directly as `af[key]`. Since the underlying data is a dictionary, it can be modified in the standard way:
+It contains a `metadata` field, which is a new dictionary that merges information about this library (stored under the `asdf_library` key) with the original user-defined `af_payload` dictionary. For convenience, `af.metadata[<key>]` can be accessed directly as `af[key]`. Since the underlying data is a dictionary, it can be modified in the standard way:
 
 ```jldoctest intro
 julia> af["field_1"] = [50, 60, 70, 80];
@@ -123,7 +118,7 @@ julia> save("intro_modified.asdf", af)
     ```jldoctest intro
     julia> read("intro_modified.asdf", String) |> print
     #ASDF 1.0.0
-    #ASDF_STANDARD 1.2.0
+    #ASDF_STANDARD 1.6.0
     # This is an ASDF file <https://asdf-standard.readthedocs.io/>
     %YAML 1.1
     %TAG ! tag:stsci.edu:asdf/
@@ -148,16 +143,11 @@ julia> save("intro_modified.asdf", af)
         - 1.0
         - 2.0
         - 3.0
-    asdf/library: !core/software-1.0.0
+    asdf_library: !core/software-1.0.0
       name: "ASDF.jl"
       author: "Erik Schnetter <schnetter@gmail.com>"
       homepage: "https://github.com/JuliaAstro/ASDF.jl"
       version: "2.0.0"
-    ...
-    #ASDF BLOCK INDEX
-    %YAML 1.1
-    ---
-    []
     ...
     ```
 
@@ -172,14 +162,14 @@ julia> save("intro_compressed.asdf", af_payload)
 
 julia> af = load("intro_compressed.asdf")
 intro_compressed.asdf
-├─ meta::String
-│  └─ my::String
+├─ meta::OrderedDict
+│  └─ my::OrderedDict
 │     └─ nested::String | metadata
-├─ data::ASDF.NDArray | shape = [4]
-└─ asdf/library::String
+├─ data::NDArray | shape = [4], datatype = Int64
+└─ asdf_library::TaggedMapping
+   ├─ name::String | ASDF.jl
    ├─ author::String | Erik Schnetter <schnetter@gmail.com>
    ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
-   ├─ name::String | ASDF.jl
    └─ version::String | 2.0.0
 ```
 
@@ -187,7 +177,7 @@ intro_compressed.asdf
     ```julia-repl
     julia> read("intro_compressed.asdf", String) |> print
     #ASDF 1.0.0
-    #ASDF_STANDARD 1.2.0
+    #ASDF_STANDARD 1.6.0
     # This is an ASDF file <https://asdf-standard.readthedocs.io/>
     %YAML 1.1
     %TAG ! tag:stsci.edu:asdf/
@@ -196,13 +186,13 @@ intro_compressed.asdf
     meta:
       my:
         nested: "metadata"
-    data: !core/ndarray-1.0.0
+    data: !core/ndarray-1.1.0
       source: 0
       shape:
         - 4
       datatype: "int64"
       byteorder: "little"
-    asdf/library: !core/software-1.0.0
+    asdf_library: !core/software-1.0.0
       name: "ASDF.jl"
       author: "Erik Schnetter <schnetter@gmail.com>"
       homepage: "https://github.com/JuliaAstro/ASDF.jl"
