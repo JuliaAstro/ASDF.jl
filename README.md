@@ -17,26 +17,26 @@ using ASDF
 
 af = load("jwst.asdf"; extensions = true)
 jwst.asdf
-├─ asdf_library::String
+├─ asdf_library::TaggedMapping
 │  ├─ author::String | The ASDF Developers
 │  ├─ homepage::String | http://github.com/asdf-format/asdf
 │  ├─ name::String | asdf
 │  └─ version::String | 3.2.0
-├─ history::String
-│  └─ extensions::Vector{OrderedCollections.OrderedDict{Any, Any}} | shape = (6,)
+├─ history::OrderedDict
+│  └─ extensions::Vector{TaggedMapping} | shape = (6,)
 ├─ _fits_hash::String | 93cf4256596bd7a6d20913c3d0f6e1ab9d3a8647c02771c5c752b2311efd9456
-├─ data::ASDF.NDArray | shape = [4159, 6353]
-└─ meta::String
-   ├─ aperture::String
+├─ data::NDArray | shape = [4159, 6353], datatype = Float32
+└─ meta::OrderedDict
+   ├─ aperture::OrderedDict
    │  ├─ name::String | NRCA5_FULL
    │  ├─ position_angle::Float64 | 251.53592358473648
    │  └─ pps_name::String | NRCALL_FULL
-   ├─ asn::String
+   ├─ asn::OrderedDict
    │  ├─ exptype::String | science
    │  ├─ pool_name::String | jw01611_20240910t150659_pool.csv
    │  └─ table_name::String | jw01611-o002_20240910t150659_image3_00001_asn.json
-   ├─ background::String
-  ⋮  (320) more rows
+   ├─ background::OrderedDict
+  ⋮  (325) more rows
 ```
 
 ```julia

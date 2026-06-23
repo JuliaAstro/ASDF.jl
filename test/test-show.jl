@@ -7,4 +7,8 @@
 
     # I'm sure there's a better way to test this code path
     @test ASDF.info(af; max_rows = 5) == nothing
+
+    # `Vector`s get an element-typed label, other `AbstractVector`s fall back to their type name
+    @test ASDF.vector_typelabel([1.0, 2.0]) == "Vector{Float64}"
+    @test ASDF.vector_typelabel(1:3) == "UnitRange"
 end

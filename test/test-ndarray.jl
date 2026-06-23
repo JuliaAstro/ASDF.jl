@@ -103,7 +103,9 @@ end
         @test nd[] == expected
 
         nd = make_ndarray(; lazy_block_headers = lbh,  source = Int64(0), data = nothing, byteorder = opposite, datatype = ASDF.Ucs4Datatype(2), shape = [Int64(1)], strides = [Int64(8)])
-        @test nd[] == [(UInt32(0x00000001), UInt32(0x00000002))]
+        # ucs4 data is presented as a string-like `UCS4String`, byte-swapped to host order
+        @test eltype(nd[]) <: AbstractString
+        @test nd[] == [join((Char(0x1), Char(0x2)))]
     end
 
     nd = make_ndarray(; strides = Int64[5])
