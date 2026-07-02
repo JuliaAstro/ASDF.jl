@@ -1315,11 +1315,7 @@ struct ASDFFile
     lazy_block_headers::LazyBlockHeaders
 end
 
-# `convert(OrderedDict, ::Dict)` refuses to run because an unordered `Dict` has no defined key
-# order, so accept any `AbstractDict` and build the `OrderedDict` from its pairs instead. Callers
-# passing an already-ordered mapping keep their order; unordered ones adopt iteration order.
-ASDFFile(filename::AbstractString, metadata::AbstractDict, lazy_block_headers::LazyBlockHeaders) =
-    ASDFFile(filename, OrderedDict{Any,Any}(metadata), lazy_block_headers)
+ASDFFile(filename::AbstractString, metadata::AbstractDict, lazy_block_headers::LazyBlockHeaders) = ASDFFile(filename, OrderedDict{Any, Any}(metadata), lazy_block_headers)
 
 function YAML.write(file::ASDFFile)
     return "[ASDF file \"$(file.filename)\"]\n" * YAML.write(file.metadata)
