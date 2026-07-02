@@ -54,6 +54,24 @@ end
     @test result == "[ASDF file \"my_file.asdf\"]\nx: 1\n"
 end
 
+@testset "Mutate and re-save an `ASDFFile`" begin
+    dir = mktempdir(; cleanup = true)
+    orig = joinpath(dir, "orig.asdf")
+    resaved = joinpath(dir, "resaved.asdf")
+
+    save(orig, Dict{Any, Any}("x" => 1))
+    af = load(orig)
+    af["x"] = 2
+    af["y"] = "new"
+    @test af["x"] == 2
+
+    # `save` accepts the `ASDFFile` wrapper itself, unwrapping to its metadata tree.
+    save(resaved, af)
+    af′ = load(resaved)
+    @test af′["x"] == 2
+    @test af′["y"] == "new"
+end
+
 @testset "helper functions" begin
     @test ASDF.native2big_U8(0x05) == [0x05]
     @test ASDF.native2big_U8(5) == [0x05]
