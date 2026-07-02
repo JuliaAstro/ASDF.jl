@@ -3,6 +3,7 @@ using ASDF
 
 const init_code = quote
     using ASDF
+    using OrderedCollections
     using Test
     using YAML
 

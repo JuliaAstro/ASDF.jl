@@ -125,7 +125,7 @@ end
     # deliberately non-alphabetical order so hash ordering would not match by coincidence.
     doc = ASDF.TaggedMapping(
         "tag:example.org:mylib/root-1.0.0",
-        ASDF.OrderedDict{Any, Any}("zebra" => 1, "apple" => 2, "mango" => 3),
+        OrderedDict{Any, Any}("zebra" => 1, "apple" => 2, "mango" => 3),
     )
 
     ASDF.write_file(path, doc)
