@@ -261,6 +261,19 @@ end
     @test tsc == "3.14"
 end
 
+@testset "convert `TaggedMapping` to `OrderedDict`" begin
+    # Dropping the tag back to an `OrderedDict` must preserve insertion order. Deliberately
+    # non-alphabetical keys so hash ordering would not match by coincidence.
+    tm = ASDF.TaggedMapping(
+        "tag:example.org:mylib/widget-1.0.0",
+        OrderedDict{Any, Any}("zebra" => 1, "apple" => 2, "mango" => 3),
+    )
+    od = convert(OrderedDict{Any, Any}, tm)
+    @test od isa OrderedDict{Any, Any}
+    @test collect(keys(od)) == ["zebra", "apple", "mango"]
+    @test od == tm.value
+end
+
 @testset "tagged node mutation" begin
     # The `Tagged*` containers delegate mutation to the wrapped value so a loaded node can be
     # edited in place while keeping its tag. Each mutating method is pinned down here; the
