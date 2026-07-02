@@ -2,9 +2,7 @@
 
 A new [Advanced Scientific Data Format (ASDF)](https://asdf-standard.readthedocs.io/en/latest/index.html) package, written in Julia.
 
-
 ## Quickstart
-
 
 ### Installation
 
@@ -14,7 +12,7 @@ pkg> add ASDF, OrderedCollections
 
 ### Usage
 
-```@repl
+```@example quickstart
 using ASDF, OrderedCollections
 
 doc = OrderedDict(
@@ -24,11 +22,15 @@ doc = OrderedDict(
         "field_3a" => ["apple", "orange", "pear"],
         "field_3b" => [1.0, 2.0, 3.0],
     )
-);
+)
 
 save("example.asdf", doc)
+```
 
+```@example quickstart
 af = load("example.asdf")
+```
 
+```@example quickstart
 ASDF.info(af; max_rows = 3)
 ```

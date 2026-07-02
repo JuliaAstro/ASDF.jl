@@ -9,12 +9,12 @@ In this example, we show how to use ASDF.jl to load and view some simulated astr
 
 ## Load
 
-```@repl roman
+```@example roman
 fpath = let
     data_dir = joinpath("..", "..", "data")
     mkpath(data_dir)
     joinpath(data_dir, "roman.asdf")
-end;
+end
 
 if !isfile(fpath)
     using AWSS3, AWS
@@ -31,7 +31,7 @@ if !isfile(fpath)
 end
 ```
 
-```@repl roman
+```@example roman
 using ASDF
 
 af = load(fpath; extensions = true, validate_checksum = false)

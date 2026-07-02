@@ -9,13 +9,13 @@ In this example, we show how to use ASDF.jl to load and view some astronomical d
 
 ## Load
 
-```@repl jwst
+```@example jwst
 
 fpath = let
     data_dir = joinpath("..", "..", "data")
     mkpath(data_dir)
     joinpath(data_dir, "jwst.asdf")
-end;
+end
 
 if !isfile(fpath)
     using Downloads: download
@@ -24,7 +24,7 @@ if !isfile(fpath)
 end
 ```
 
-```@repl jwst
+```@example jwst
 using ASDF
 
 af = load(fpath; extensions = true)

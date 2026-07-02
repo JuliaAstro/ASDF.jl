@@ -555,7 +555,7 @@ asdf_datatype_yaml(dt::Ucs4Datatype) = ["ucs4", dt.length]
 A single named field within a [`StructuredDatatype`](@ref). Corresponds to one entry in the ASDF `datatype` list when it takes the dict form:
 
 ```yaml
-- {name: x, datatype: float32, byteorder: little}
+- {name: x,     datatype: float32,    byteorder: little}
 - {name: label, datatype: [ascii, 8], byteorder: little}
 ```
 
@@ -575,9 +575,9 @@ An ASDF compound datatype consisting of named fields, corresponding to the list-
 
 ```yaml
 datatype:
-- {name: x,      datatype: float32, byteorder: little}
-- {name: y,      datatype: float32, byteorder: little}
-- {name: label,  datatype: [ascii, 4], byteorder: little}
+- {name: x,     datatype: float32,    byteorder: little}
+- {name: y,     datatype: float32,    byteorder: little}
+- {name: label, datatype: [ascii, 4], byteorder: little}
 ```
 
 The corresponding Julia type (returned by `Base.Type`) is a `NamedTuple` with one field per entry, e.g., `@NamedTuple{x::Float32, y::Float32, label::NTuple{4,UInt8}}`. This type is `isbitstype`, so `reinterpret`, `sizeof`, and `bswap` all work correctly on it.
