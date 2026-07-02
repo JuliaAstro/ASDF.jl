@@ -1306,12 +1306,16 @@ The in-memory representation of a loaded ASDF file, combining the parsed YAML me
 | `filename`            | Path of the file on disk, as passed to [`ASDF.load_file`](@ref). Used for display and diagnostics only. The file is not kept open after loading. |
 | `metadata`            | The fully parsed YAML tree. Keys are strings matching the top-level YAML keys. Values may be any Julia type produced by the YAML constructors, including [`ASDF.NDArray`](@ref), [`ASDF.ChunkedNDArray`](@ref), nested `Dict`s, `Vector`s, and scalars. |
 | `lazy_block_headers`  | All binary block headers found in the file, scanned once at load time. Shared by reference with every [`ASDF.NDArray`](@ref) in `metadata`, allowing them to locate and read their backing blocks on demand. |
+
+`metadata` is stored as an `OrderedDict{Any, Any}` so top-level key order is preserved. The constructor accepts any `AbstractDict` and builds this from its pairs, so a plain `Dict` may be passed directly (it adopts that `Dict`'s iteration order); an already-ordered mapping keeps its order.
 """
 struct ASDFFile
     filename::AbstractString
     metadata::OrderedDict{Any,Any}
     lazy_block_headers::LazyBlockHeaders
 end
+
+ASDFFile(filename::AbstractString, metadata::AbstractDict, lazy_block_headers::LazyBlockHeaders) = ASDFFile(filename, OrderedDict{Any, Any}(metadata), lazy_block_headers)
 
 function YAML.write(file::ASDFFile)
     return "[ASDF file \"$(file.filename)\"]\n" * YAML.write(file.metadata)
