@@ -9,6 +9,7 @@ function test_fields(af1, af2)
             @test compare(v1, v2)
         end
     end
+    return
 end
 
 function roundtrip(fpath; extensions = false, validate_checksum = true)
@@ -23,14 +24,15 @@ function test_references(references)
     for reference in references
         @testset "$(reference)" begin
             af_roundtrip, af = if reference == "compressed"
-                    # Bug on Python side, see 03 Apr ASDF office hour discussion
-                    roundtrip(joinpath("data", "asdf-1.6.0", reference * ".asdf"); validate_checksum = false)
-                else
-                    roundtrip(joinpath("data", "asdf-1.6.0", reference * ".asdf"))
-                end
+                # Bug on Python side, see 03 Apr ASDF office hour discussion
+                roundtrip(joinpath("data", "asdf-1.6.0", reference * ".asdf"); validate_checksum = false)
+            else
+                roundtrip(joinpath("data", "asdf-1.6.0", reference * ".asdf"))
+            end
             test_fields(af_roundtrip, af)
         end
     end
+    return
 end
 
 references = [

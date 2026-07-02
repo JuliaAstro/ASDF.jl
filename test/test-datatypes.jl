@@ -81,7 +81,8 @@ end
     mktempdir() do dir
         path = joinpath(dir, "f16.asdf")
         open(path, "w") do io
-            print(io, """
+            print(
+                io, """
                 #ASDF 1.0.0
                 #ASDF_STANDARD 1.6.0
                 %YAML 1.1
@@ -90,7 +91,8 @@ end
                 !core/asdf-1.1.0
                 $(body)
                 ...
-                """)
+                """
+            )
         end
         local af
         @test_logs (:warn, r"older than the schema version") match_mode = :any begin
@@ -104,7 +106,8 @@ end
     mktempdir() do dir
         path = joinpath(dir, "f16ok.asdf")
         open(path, "w") do io
-            print(io, """
+            print(
+                io, """
                 #ASDF 1.0.0
                 #ASDF_STANDARD 1.6.0
                 %YAML 1.1
@@ -116,7 +119,8 @@ end
                   datatype: float16
                   shape: [2]
                 ...
-                """)
+                """
+            )
         end
         af = ASDF.load_file(path)
         arr = af["arr"][]

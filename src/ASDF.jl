@@ -42,7 +42,7 @@ Identifies the compression algorithm used for a data block. Available variants:
 """
 @enum Compression C_None C_Blosc C_Blosc2 C_Bzip2 C_Lz4 C_Xz C_Zlib C_Zstd
 
-const compression_keys = Dict{Compression,Vector{UInt8}}(
+const compression_keys = Dict{Compression, Vector{UInt8}}(
     C_None => UInt8[0, 0, 0, 0],
     C_Blosc => Vector{UInt8}("blsc"),
     C_Blosc2 => Vector{UInt8}("bls2"),
@@ -52,10 +52,10 @@ const compression_keys = Dict{Compression,Vector{UInt8}}(
     C_Zlib => Vector{UInt8}("zlib"),
     C_Zstd => Vector{UInt8}("zstd"),
 )
-if !all(length(val)==4 for val in values(compression_keys))
+if !all(length(val) == 4 for val in values(compression_keys))
     error("Invalid entry in `compression_keys`, please ensure all values have length 4.")
 end
-const compression_enums = Dict{Vector{UInt8},Compression}(
+const compression_enums = Dict{Vector{UInt8}, Compression}(
     value => key for (key, value) in compression_keys
 )
 
@@ -180,7 +180,7 @@ native2big_U8(val::UInt8) = UInt8[val]
 native2big_U16(val::UInt16) = UInt8[(val >>> 0x08) & 0xff, (val >>> 0x00) & 0xff]
 native2big_U32(val::UInt32) = UInt8[(val >>> 0x18) & 0xff, (val >>> 0x10) & 0xff, (val >>> 0x08) & 0xff, (val >>> 0x00) & 0xff]
 function native2big_U64(val::UInt64)
-    UInt8[
+    return UInt8[
         (val >>> 0x38) & 0xff,
         (val >>> 0x30) & 0xff,
         (val >>> 0x28) & 0xff,
@@ -225,7 +225,7 @@ function read_block_header(io::IO, position::Int64; validate_checksum::Bool)
         error("Block does not start with magic number")
     end
 
-    STREAMED = Bool(flags & 0x1)
+    STREAMED = Bool(flags & 0x01)
     # We don't handle streamed blocks yet
     if STREAMED
         error("ASDF.jl does not yet support streamed blocks")
@@ -243,7 +243,7 @@ end
 
 Scans an `IO` stream and returns all [`ASDF.BlockHeader`](@ref) values found.
 """
-function find_all_blocks(io::IO, pos::Int64=Int64(0); validate_checksum::Bool)
+function find_all_blocks(io::IO, pos::Int64 = Int64(0); validate_checksum::Bool)
     headers = BlockHeader[]
     pos = find_next_block(io, pos)
     while pos !== nothing
@@ -311,9 +311,10 @@ end
 
 function decode_Lz4(data)
     if (# LZ4 Frame magic bytes 04 22 4D 18
-        length(data) >= 4 &&
-        data[1] == 0x04 && data[2] == 0x22 &&
-        data[3] == 0x4D && data[4] == 0x18)
+            length(data) >= 4 &&
+                data[1] == 0x04 && data[2] == 0x22 &&
+                data[3] == 0x4D && data[4] == 0x18
+        )
         return decode(LZ4FrameCodec(), data)
     else
         # If the data was originally created from Python's ASDF, then it will be in block instead of frame layout,
@@ -333,14 +334,14 @@ function decode_Lz4(data)
 
         while pos <= length(data)
             # Outer ASDF envelope: big-endian compressed chunk size
-            compressed_chunk_size = Int(big2native_U32(@view data[pos:pos+3]))
+            compressed_chunk_size = Int(big2native_U32(@view data[pos:(pos + 3)]))
             pos += 4
             # Inner lz4.block store_size=True prefix: little-endian uncompressed size
-            uncompressed_chunk_size = Int(little2native_U32(@view data[pos:pos+3]))
+            uncompressed_chunk_size = Int(little2native_U32(@view data[pos:(pos + 3)]))
             pos += 4
             # Raw LZ4 block payload (compressed_chunk_size includes the 4-byte LE prefix)
             payload_len = compressed_chunk_size - 4
-            payload = @view data[pos:pos+payload_len-1]
+            payload = @view data[pos:(pos + payload_len - 1)]
             pos += payload_len
             append!(out, decode(LZ4BlockCodec(), payload; max_size = uncompressed_chunk_size, size_hint = uncompressed_chunk_size))
         end
@@ -360,8 +361,8 @@ Represents the byte order of array data stored in a block. Available variants:
 - `Byteorder_big`: Big-endian
 """
 @enum Byteorder Byteorder_little Byteorder_big
-const byteorder_string_dict = Dict{Byteorder,String}(Byteorder_little => "little", Byteorder_big => "big")
-const string_byteorder_dict = Dict{String,Byteorder}(val => key for (key, val) in byteorder_string_dict)
+const byteorder_string_dict = Dict{Byteorder, String}(Byteorder_little => "little", Byteorder_big => "big")
+const string_byteorder_dict = Dict{String, Byteorder}(val => key for (key, val) in byteorder_string_dict)
 
 """
     ASDF.Byteorder(str::AbstractString)::Byteorder
@@ -433,7 +434,7 @@ Maps ASDF datatype strings to Julia types. Note this is unrelated to `Base.DataT
     Datatype_complex64
     Datatype_complex128
 end
-const datatype_string_dict = Dict{Datatype,String}(
+const datatype_string_dict = Dict{Datatype, String}(
     Datatype_bool8 => "bool8",
     Datatype_int8 => "int8",
     Datatype_int16 => "int16",
@@ -452,8 +453,8 @@ const datatype_string_dict = Dict{Datatype,String}(
     Datatype_complex64 => "complex64",
     Datatype_complex128 => "complex128",
 )
-const string_datatype_dict = Dict{String,Datatype}(val => key for (key, val) in datatype_string_dict)
-const datatype_type_dict = Dict{Datatype,Type}(
+const string_datatype_dict = Dict{String, Datatype}(val => key for (key, val) in datatype_string_dict)
+const datatype_type_dict = Dict{Datatype, Type}(
     Datatype_bool8 => Bool,
     Datatype_int8 => Int8,
     Datatype_int16 => Int16,
@@ -472,7 +473,7 @@ const datatype_type_dict = Dict{Datatype,Type}(
     Datatype_complex64 => Complex{Float32},
     Datatype_complex128 => Complex{Float64},
 )
-const type_datatype_dict = Dict{Type,Datatype}(val => key for (key, val) in datatype_type_dict)
+const type_datatype_dict = Dict{Type, Datatype}(val => key for (key, val) in datatype_type_dict)
 
 Datatype(str::AbstractString) = string_datatype_dict[str]
 Base.string(datatype::Datatype) = datatype_string_dict[datatype]
@@ -535,7 +536,7 @@ Base.Type(dt::AsciiDatatype) = NTuple{dt.length, UInt8}
 Return the Julia `isbitstype` corresponding to an ASDF string datatype, suitable for use
 with `reinterpret` and `sizeof`. `N` is the number of characters (`dt.length`).
 """
-Base.Type(dt::Ucs4Datatype)  = NTuple{dt.length, UInt32}
+Base.Type(dt::Ucs4Datatype) = NTuple{dt.length, UInt32}
 
 """
     asdf_datatype_yaml(dt) -> Union{String, Vector}
@@ -703,25 +704,25 @@ A lazily-materialized N-dimensional array stored in an ASDF file, either as a bi
 """
 struct NDArray
     lazy_block_headers::LazyBlockHeaders
-    source::Union{Nothing,Int64,AbstractString}
-    data::Union{Nothing,AbstractArray}
+    source::Union{Nothing, Int64, AbstractString}
+    data::Union{Nothing, AbstractArray}
     shape::Vector{Int64}
-    datatype::Union{Datatype,StructuredDatatype,AsciiDatatype,Ucs4Datatype}
+    datatype::Union{Datatype, StructuredDatatype, AsciiDatatype, Ucs4Datatype}
     byteorder::Byteorder
     offset::Int64
     strides::Vector{Int64} # stored in ASDF (Python/C) order, not in Julia (Fortran) order
     # mask
 
     function NDArray(
-        lazy_block_headers::LazyBlockHeaders,
-        source::Union{Nothing,Int64,AbstractString},
-        data::Union{Nothing,AbstractArray},
-        shape::Vector{Int64},
-        datatype::Union{Datatype,StructuredDatatype,AsciiDatatype,Ucs4Datatype},
-        byteorder::Byteorder,
-        offset::Int64,
-        strides::Vector{Int64},
-    )
+            lazy_block_headers::LazyBlockHeaders,
+            source::Union{Nothing, Int64, AbstractString},
+            data::Union{Nothing, AbstractArray},
+            shape::Vector{Int64},
+            datatype::Union{Datatype, StructuredDatatype, AsciiDatatype, Ucs4Datatype},
+            byteorder::Byteorder,
+            offset::Int64,
+            strides::Vector{Int64},
+        )
         if (source === nothing) + (data === nothing) != 1
             throw(ArgumentError("Exactly one of `source` or `data` must be provided."))
         end
@@ -753,15 +754,15 @@ struct NDArray
 end
 
 function NDArray(
-    lazy_block_headers::LazyBlockHeaders,
-    source::Union{Nothing,Integer},
-    data::Union{Nothing,AbstractArray},
-    shape::AbstractVector{<:Integer},
-    datatype::Union{Datatype,StructuredDatatype,AsciiDatatype,Ucs4Datatype,AbstractString,AbstractVector},
-    byteorder::Union{Nothing,Byteorder,AbstractString},
-    offset::Union{Nothing,Integer}=0,
-    strides::Union{Nothing,<:AbstractVector{<:Integer}}=nothing,
-)
+        lazy_block_headers::LazyBlockHeaders,
+        source::Union{Nothing, Integer},
+        data::Union{Nothing, AbstractArray},
+        shape::AbstractVector{<:Integer},
+        datatype::Union{Datatype, StructuredDatatype, AsciiDatatype, Ucs4Datatype, AbstractString, AbstractVector},
+        byteorder::Union{Nothing, Byteorder, AbstractString},
+        offset::Union{Nothing, Integer} = 0,
+        strides::Union{Nothing, <:AbstractVector{<:Integer}} = nothing,
+    )
     if source isa Integer
         source = Int64(source)
     end
@@ -799,13 +800,13 @@ function make_construct_yaml_ndarray(block_headers::LazyBlockHeaders)
     warned_tags = Set{String}()
     function construct_yaml_ndarray(constructor::YAML.Constructor, node::YAML.Node)
         mapping = YAML.construct_mapping(constructor, node)
-        source = get(mapping, "source", nothing)::Union{Nothing,Integer}
-        data = get(mapping, "data", nothing)::Union{Nothing,AbstractVector}
+        source = get(mapping, "source", nothing)::Union{Nothing, Integer}
+        data = get(mapping, "data", nothing)::Union{Nothing, AbstractVector}
         shape = mapping["shape"]::AbstractVector{<:Integer}
         datatype = mapping["datatype"] # No annotation needed, `parse_asdf_datatype` handles dispatch
-        byteorder = get(mapping, "byteorder", nothing)::Union{Nothing,AbstractString}
-        offset = get(mapping, "offset", nothing)::Union{Nothing,Integer}
-        strides = get(mapping, "strides", nothing)::Union{Nothing,AbstractVector{<:Integer}}
+        byteorder = get(mapping, "byteorder", nothing)::Union{Nothing, AbstractString}
+        offset = get(mapping, "offset", nothing)::Union{Nothing, Integer}
+        strides = get(mapping, "strides", nothing)::Union{Nothing, AbstractVector{<:Integer}}
         ndarray = NDArray(block_headers, source, data, shape, datatype, byteorder, offset, strides)
         # The datatype should be representable by the tag's ndarray schema version: `float16` (and
         # `complex32`) were only added in 1.1.0. `min_ndarray_version` is the single source of truth,
@@ -901,7 +902,7 @@ end
 function correct_byteorder(data, dt::StructuredDatatype, ::Byteorder)
     needs_swap = any(
         !(f.datatype isa AsciiDatatype) && f.byteorder != host_byteorder
-        for f in dt.fields
+            for f in dt.fields
     )
     if needs_swap
         data = map(data) do elem
@@ -1051,7 +1052,7 @@ extension tags that would otherwise raise an error. Each behaves exactly like it
 A mapping indexes and iterates as a dict, a sequence as a vector, a scalar as a string, while
 retaining the original `tag` so the node round-trips unchanged through [`ASDF.write_file`](@ref).
 """
-struct TaggedMapping{D<:AbstractDict} <: AbstractDict{Any, Any}
+struct TaggedMapping{D <: AbstractDict} <: AbstractDict{Any, Any}
     tag::String
     value::D
 end
@@ -1079,7 +1080,7 @@ Base.pop!(m::TaggedMapping, k, default) = pop!(m.value, k, default)
 Base.convert(::Type{OrderedDict{Any, Any}}, m::TaggedMapping) = OrderedDict{Any, Any}(m.value)
 
 @doc (@doc TaggedMapping)
-struct TaggedSequence{V<:AbstractVector} <: AbstractVector{Any}
+struct TaggedSequence{V <: AbstractVector} <: AbstractVector{Any}
     tag::String
     value::V
 end
@@ -1123,7 +1124,7 @@ end
 # and for empty collections (printed inline as `{}`/`[]`) the writer leaves us on the key's line,
 # so the tag stays inline. Both forms parse back to a tagged node.
 function YAML._print(io::IO, val::Union{TaggedMapping, TaggedSequence}, level::Int = 0, ignore_level::Bool = false)
-    if isempty(val.value)
+    return if isempty(val.value)
         print(io, shorthand_tag(val.tag), " ")
         YAML._print(io, val.value, level, ignore_level)
     else
@@ -1133,12 +1134,12 @@ function YAML._print(io::IO, val::Union{TaggedMapping, TaggedSequence}, level::I
 end
 function YAML._print(io::IO, val::TaggedScalar, level::Int = 0, ignore_level::Bool = false)
     print(io, shorthand_tag(val.tag), " ")
-    YAML._print(io, val.value, level, ignore_level)
+    return YAML._print(io, val.value, level, ignore_level)
 end
 
 function YAML._print(io::IO, val::NDArray, level::Int = 0, ignore_level::Bool = false)
     # TODO: Get compression from underlying header block?
-    YAML._print(io, NDArrayWrapper(val[]; compression = C_None), level, ignore_level)
+    return YAML._print(io, NDArrayWrapper(val[]; compression = C_None), level, ignore_level)
 end
 
 # YAML 1.1 only resolves a float written in exponential form when its exponent carries an explicit
@@ -1162,11 +1163,11 @@ end
 YAML._print(io::IO, val::YAMLScalar, level::Int = 0, ignore_level::Bool = false) = println(io, val.text)
 
 # Pre-write pass: recursively rewrite a document so every float is emitted in YAML-1.1-compliant form.
-yaml_compliant(val::AbstractFloat)  = YAMLScalar(yaml_float_string(val))
-yaml_compliant(val::TaggedMapping)  = TaggedMapping(val.tag, yaml_compliant(val.value))
+yaml_compliant(val::AbstractFloat) = YAMLScalar(yaml_float_string(val))
+yaml_compliant(val::TaggedMapping) = TaggedMapping(val.tag, yaml_compliant(val.value))
 yaml_compliant(val::TaggedSequence) = TaggedSequence(val.tag, yaml_compliant(val.value))
-yaml_compliant(val::AbstractDict)   = OrderedDict{Any, Any}(k => yaml_compliant(v) for (k, v) in val)
-yaml_compliant(val::AbstractArray)  = map(yaml_compliant, val)
+yaml_compliant(val::AbstractDict) = OrderedDict{Any, Any}(k => yaml_compliant(v) for (k, v) in val)
+yaml_compliant(val::AbstractArray) = map(yaml_compliant, val)
 yaml_compliant(val) = val
 
 ################################################################################
@@ -1256,8 +1257,8 @@ struct ChunkedNDArray
 end
 
 function ChunkedNDArray(
-    shape::AbstractVector{<:Integer}, datatype::Union{Datatype,StructuredDatatype,AsciiDatatype,Ucs4Datatype,AbstractString,AbstractVector}, chunks::AbstractVector{NDArrayChunk}
-)
+        shape::AbstractVector{<:Integer}, datatype::Union{Datatype, StructuredDatatype, AsciiDatatype, Ucs4Datatype, AbstractString, AbstractVector}, chunks::AbstractVector{NDArrayChunk}
+    )
     if datatype isa AbstractString || datatype isa AbstractVector
         datatype = Datatype(datatype)
     end
@@ -1311,7 +1312,7 @@ The in-memory representation of a loaded ASDF file, combining the parsed YAML me
 """
 struct ASDFFile
     filename::AbstractString
-    metadata::OrderedDict{Any,Any}
+    metadata::OrderedDict{Any, Any}
     lazy_block_headers::LazyBlockHeaders
 end
 
@@ -1332,20 +1333,20 @@ end
 # Only mappings are walked; vectors (data arrays and lists of containers alike) are leaf nodes,
 # summarized by their shape rather than expanded element-by-element.
 AbstractTrees.children(n::ASDFTreeNode) =
-    n.value isa ASDFFile     ? [ASDFTreeNode(k, v) for (k, v) in n.value.metadata] :
+    n.value isa ASDFFile ? [ASDFTreeNode(k, v) for (k, v) in n.value.metadata] :
     n.value isa AbstractDict ? [ASDFTreeNode(k, v) for (k, v) in n.value] :
-                               ()
+    ()
 
 # Compact, module-unqualified type label for a vector node.
 vector_typelabel(v::Vector) = "Vector{$(nameof(eltype(v)))}"
 vector_typelabel(v::AbstractVector) = string(nameof(typeof(v)))
 
 AbstractTrees.printnode(io::IO, n::ASDFTreeNode) =
-    n.key === nothing            ? print(io, basename(n.value.filename))                                          :
-    n.value isa AbstractDict     ? print(io, n.key, "::",  nameof(typeof(n.value)))                              :
-    n.value isa NDArray          ? print(io, n.key, "::",  nameof(typeof(n.value)), " | shape = ", n.value.shape, ", datatype = ", materialized_eltype(n.value.datatype)) :
-    n.value isa AbstractVector   ? print(io, n.key, "::",  vector_typelabel(n.value), " | shape = ", size(n.value)) :
-                                   print(io, n.key, "::",  typeof(n.value), " | ", n.value)
+    n.key === nothing ? print(io, basename(n.value.filename)) :
+    n.value isa AbstractDict ? print(io, n.key, "::", nameof(typeof(n.value))) :
+    n.value isa NDArray ? print(io, n.key, "::", nameof(typeof(n.value)), " | shape = ", n.value.shape, ", datatype = ", materialized_eltype(n.value.datatype)) :
+    n.value isa AbstractVector ? print(io, n.key, "::", vector_typelabel(n.value), " | shape = ", size(n.value)) :
+    print(io, n.key, "::", typeof(n.value), " | ", n.value)
 
 """
     info(io::IO, af::ASDFFile; max_rows = 20)
@@ -1435,7 +1436,7 @@ function info(io::IO, af::ASDFFile; max_rows = 20)
     AbstractTrees.print_tree(buf, root)
     lines = split(String(take!(buf)), '\n', keepempty = false)
 
-    if length(lines) ≤ max_rows
+    return if length(lines) ≤ max_rows
         foreach(l -> println(io, l), lines)
     else
         foreach(l -> println(io, l), Iterators.take(lines, max_rows))
@@ -1468,7 +1469,7 @@ function load_file(filename::AbstractString; extensions = false, validate_checks
     # These core container tags carry no behavior of their own (we just want their mapping
     # contents), but the tag itself is provenance worth keeping, so wrap them in a `TaggedMapping`
     # that round-trips the tag on write.
-    tagged_map_constructor = (constructor, node) -> TaggedMapping(node.tag, YAML.construct_mapping(OrderedDict{Any,Any}, constructor, node))
+    tagged_map_constructor = (constructor, node) -> TaggedMapping(node.tag, YAML.construct_mapping(OrderedDict{Any, Any}, constructor, node))
     asdf_constructors = copy(YAML.default_yaml_constructors)
     delete!(asdf_constructors, "tag:yaml.org,2002:map")  # Let dicttype= handle plain maps
     asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = tagged_map_constructor
@@ -1565,10 +1566,10 @@ struct ASDFLibrary
     homepage::AbstractString
     version::AbstractString
 end
-function YAML._print(io::IO, val::ASDFLibrary, level::Int=0, ignore_level::Bool=false)
+function YAML._print(io::IO, val::ASDFLibrary, level::Int = 0, ignore_level::Bool = false)
     println(io, "!core/software-1.0.0")
     library = OrderedDict(:name => val.name, :author => val.author, :homepage => val.homepage, :version => val.version)
-    YAML._print(io, library, level, ignore_level)
+    return YAML._print(io, library, level, ignore_level)
 end
 
 """
@@ -1591,7 +1592,7 @@ struct NDArrayWrapper
     inline::Bool
     lz4_layout::Symbol
 end
-function NDArrayWrapper(array::AbstractArray; compression::Compression=C_Bzip2, inline::Bool=false, lz4_layout::Symbol=:block)
+function NDArrayWrapper(array::AbstractArray; compression::Compression = C_Bzip2, inline::Bool = false, lz4_layout::Symbol = :block)
     return NDArrayWrapper(array, compression, inline, lz4_layout)
 end
 Base.getindex(val::NDArrayWrapper) = val.array
@@ -1622,7 +1623,7 @@ end
 function Base.empty!(blocks::Blocks)
     empty!(blocks.arrays)
     empty!(blocks.positions)
-    nothing
+    return nothing
 end
 Base.isempty(blocks::Blocks) = isempty(blocks.arrays) && isempty(blocks.positions)
 # Unfortunately we need a global variable.
@@ -1644,9 +1645,9 @@ Errors if `T` is not representable as an ASDF datatype.
 See also: [`asdf_datatype_yaml`](@ref).
 """
 function infer_asdf_datatype(T::Type)::Union{Datatype, AsciiDatatype, Ucs4Datatype, StructuredDatatype}
-    if T <: NTuple{N, UInt8} where N
+    if T <: NTuple{N, UInt8} where {N}
         return AsciiDatatype(fieldcount(T))
-    elseif T <: NTuple{N, UInt32} where N
+    elseif T <: NTuple{N, UInt32} where {N}
         return Ucs4Datatype(fieldcount(T))
     elseif T <: NamedTuple
         fields = map(fieldnames(T), fieldtypes(T)) do name, FT
@@ -1663,17 +1664,17 @@ end
 infer_asdf_datatype(::Type{UCS4String{N}}) where {N} = Ucs4Datatype(N)
 infer_asdf_datatype(::Type{AsciiString{N}}) where {N} = AsciiDatatype(N)
 
-function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bool=false)
+function YAML._print(io::IO, val::NDArrayWrapper, level::Int = 0, ignore_level::Bool = false)
     datatype = infer_asdf_datatype(eltype(val.array))
     if val.inline
         data = val.array
         # Split multidimensional arrays into array-of-arrays
-        data = eachslice(data; dims=Tuple(2:ndims(data)))
+        data = eachslice(data; dims = Tuple(2:ndims(data)))
         ndarray = OrderedDict(
             # Route inline data through the float pass so its elements get YAML-1.1 exponents too.
             :data => yaml_compliant(data),
             :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
-            :datatype => asdf_datatype_yaml(datatype),#string(Datatype(eltype(val.array))),
+            :datatype => asdf_datatype_yaml(datatype), #string(Datatype(eltype(val.array))),
             # :offset => 0::Integer,
             # :strides => ::Vector{Int64},
         )
@@ -1697,7 +1698,7 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int=0, ignore_level::Bo
     # (`min_ndarray_version` never exceeds it). This keeps `float16` arrays valid and round-trips
     # 1.1.0-tagged arrays unchanged.
     println(io, "!core/ndarray-1.1.0")
-    YAML._print(io, ndarray, level, ignore_level)
+    return YAML._print(io, ndarray, level, ignore_level)
 end
 
 function encode_Lz4_block(input::AbstractVector{UInt8}; chunk_size::Int = 1024 * 1024 * 8)
@@ -1719,12 +1720,14 @@ function encode_Lz4_block(input::AbstractVector{UInt8}; chunk_size::Int = 1024 *
         append!(out, native2big_U32(compressed_chunk_size))
 
         # Inner lz4.block store_size=True prefix: little-endian uncompressed size
-        append!(out, [
-            (uncompressed_size >>> 0x00) & 0xff,
-            (uncompressed_size >>> 0x08) & 0xff,
-            (uncompressed_size >>> 0x10) & 0xff,
-            (uncompressed_size >>> 0x18) & 0xff,
-        ])
+        append!(
+            out, [
+                (uncompressed_size >>> 0x00) & 0xff,
+                (uncompressed_size >>> 0x08) & 0xff,
+                (uncompressed_size >>> 0x10) & 0xff,
+                (uncompressed_size >>> 0x18) & 0xff,
+            ]
+        )
 
         # Raw LZ4 block payload
         append!(out, compressed_payload)
@@ -1772,12 +1775,12 @@ function write_file(filename::AbstractString, document::AbstractDict)
     println(
         io,
         """#ASDF 1.0.0
-           #ASDF_STANDARD 1.6.0
-           # This is an ASDF file <https://asdf-standard.readthedocs.io/>
-           %YAML 1.1
-           %TAG ! tag:stsci.edu:asdf/
-           ---
-           !core/asdf-1.1.0""",
+        #ASDF_STANDARD 1.6.0
+        # This is an ASDF file <https://asdf-standard.readthedocs.io/>
+        %YAML 1.1
+        %TAG ! tag:stsci.edu:asdf/
+        ---
+        !core/asdf-1.1.0""",
     )
     YAML.write(io, full_document)
     println(io, "...")
@@ -1827,15 +1830,15 @@ function write_file(filename::AbstractString, document::AbstractDict)
                 #data = encode(LZ4BlockEncodeOptions(), input) # Not compatible with Python asdf
             else
                 if array.compression == C_Blosc
-                    encode_options = BloscEncodeOptions(; clevel=9, doshuffle=2, typesize=sizeof(eltype(array.array)), compressor="zstd")
+                    encode_options = BloscEncodeOptions(; clevel = 9, doshuffle = 2, typesize = sizeof(eltype(array.array)), compressor = "zstd")
                 elseif array.compression == C_Bzip2
-                    encode_options = BZ2EncodeOptions(; blockSize100k=9)
+                    encode_options = BZ2EncodeOptions(; blockSize100k = 9)
                 elseif array.compression == C_Lz4 && array.lz4_layout == :frame
-                    encode_options = LZ4FrameEncodeOptions(; compressionLevel=12, blockSizeID=7)
+                    encode_options = LZ4FrameEncodeOptions(; compressionLevel = 12, blockSizeID = 7)
                 elseif array.compression == C_Zlib
-                    encode_options = ZlibEncodeOptions(; level=9)
+                    encode_options = ZlibEncodeOptions(; level = 9)
                 elseif array.compression == C_Zstd
-                    encode_options = ZstdEncodeOptions(; compressionLevel=22)
+                    encode_options = ZstdEncodeOptions(; compressionLevel = 22)
                 else
                     error("`array` has invalid state: `compression` field has value not specified in `Compression` enum.")
                 end
@@ -1850,7 +1853,7 @@ function write_file(filename::AbstractString, document::AbstractDict)
 
             # We need the standard, dense layout
             data::AbstractVector{UInt8}
-            data::Union{DenseArray,Base.ReinterpretArray{<:Any,<:Any,<:Any,<:DenseArray}}
+            data::Union{DenseArray, Base.ReinterpretArray{<:Any, <:Any, <:Any, <:DenseArray}}
 
             used_size = length(data)
             allocated_size = used_size
