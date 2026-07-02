@@ -1,20 +1,20 @@
 @testset "Write ASDF file" begin
-    dirname = mktempdir(; cleanup=true)
+    dirname = mktempdir(; cleanup = true)
     filename = joinpath(dirname, "output.asdf")
 
-    array = Float64[1/(i+j+k-2) for i in 1:50, j in 1:51, k in 1:52]
+    array = Float64[1 / (i + j + k - 2) for i in 1:50, j in 1:51, k in 1:52]
     doc = Dict(
-        "data1" => ASDF.NDArrayWrapper([1 2; 3 4]; inline=false),
-        "data2" => ASDF.NDArrayWrapper([1 2; 3 4]; inline=true),
+        "data1" => ASDF.NDArrayWrapper([1 2; 3 4]; inline = false),
+        "data2" => ASDF.NDArrayWrapper([1 2; 3 4]; inline = true),
         "group" => Dict(
-            "element1" => ASDF.NDArrayWrapper(array; compression=ASDF.C_None),
-            "element2" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Blosc),
-            "element3" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Bzip2),
-            "element4" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Lz4, lz4_layout=:block),
-            "element5" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Lz4, lz4_layout=:frame),
-            "element6" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Xz),
-            "element7" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Zlib),
-            "element8" => ASDF.NDArrayWrapper(array; compression=ASDF.C_Zstd),
+            "element1" => ASDF.NDArrayWrapper(array; compression = ASDF.C_None),
+            "element2" => ASDF.NDArrayWrapper(array; compression = ASDF.C_Blosc),
+            "element3" => ASDF.NDArrayWrapper(array; compression = ASDF.C_Bzip2),
+            "element4" => ASDF.NDArrayWrapper(array; compression = ASDF.C_Lz4, lz4_layout = :block),
+            "element5" => ASDF.NDArrayWrapper(array; compression = ASDF.C_Lz4, lz4_layout = :frame),
+            "element6" => ASDF.NDArrayWrapper(array; compression = ASDF.C_Xz),
+            "element7" => ASDF.NDArrayWrapper(array; compression = ASDF.C_Zlib),
+            "element8" => ASDF.NDArrayWrapper(array; compression = ASDF.C_Zstd),
         ),
     )
     save(filename, doc)

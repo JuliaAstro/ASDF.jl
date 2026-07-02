@@ -1,12 +1,12 @@
 function make_ndarray(;
-    lazy_block_headers = ASDF.LazyBlockHeaders(),
-    source = nothing,
-    data = Int32[5, 6, 7, 8],
-    shape = isnothing(data) ? Int64[4] : Int64[length(data)],
-    datatype = ASDF.Datatype_int32,
-    byteorder = ASDF.host_byteorder,
-    offset = Int64(0),
-    strides = isnothing(data) ? Int64[4] : Int64[length(data)],
+        lazy_block_headers = ASDF.LazyBlockHeaders(),
+        source = nothing,
+        data = Int32[5, 6, 7, 8],
+        shape = isnothing(data) ? Int64[4] : Int64[length(data)],
+        datatype = ASDF.Datatype_int32,
+        byteorder = ASDF.host_byteorder,
+        offset = Int64(0),
+        strides = isnothing(data) ? Int64[4] : Int64[length(data)],
     )
     nd = ASDF.NDArray(
         lazy_block_headers,
@@ -22,7 +22,7 @@ function make_ndarray(;
 end
 
 function test_ndarray(error_type, error_message; kwargs...)
-    @test_throws error_type(error_message) make_ndarray(; kwargs...)
+    return @test_throws error_type(error_message) make_ndarray(; kwargs...)
 end
 
 @testset "construction" begin
@@ -94,18 +94,18 @@ end
     end
 
     @testset "byteorder swap on source path" begin
-        expected  = Int32[1, 2, 3, 4]
+        expected = Int32[1, 2, 3, 4]
         disk_bytes = collect(reinterpret(UInt8, bswap.(expected)))
-        lbh    = ASDF.LazyBlockHeaders()
+        lbh = ASDF.LazyBlockHeaders()
         push!(lbh.block_headers, make_block_header(disk_bytes))
 
-        nd = make_ndarray(; lazy_block_headers = lbh,  source = Int64(0), data = nothing, byteorder = opposite)
+        nd = make_ndarray(; lazy_block_headers = lbh, source = Int64(0), data = nothing, byteorder = opposite)
         @test nd[] == expected
 
-        nd = make_ndarray(; lazy_block_headers = lbh,  source = Int64(0), data = nothing, byteorder = opposite, datatype = ASDF.Ucs4Datatype(2), shape = [Int64(1)], strides = [Int64(8)])
+        nd = make_ndarray(; lazy_block_headers = lbh, source = Int64(0), data = nothing, byteorder = opposite, datatype = ASDF.Ucs4Datatype(2), shape = [Int64(1)], strides = [Int64(8)])
         # ucs4 data is presented as a string-like `UCS4String`, byte-swapped to host order
         @test eltype(nd[]) <: AbstractString
-        @test nd[] == [join((Char(0x1), Char(0x2)))]
+        @test nd[] == [join((Char(0x01), Char(0x02)))]
     end
 
     nd = make_ndarray(; strides = Int64[5])

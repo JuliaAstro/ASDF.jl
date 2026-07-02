@@ -1,7 +1,8 @@
 function write_asdf(dir, body)
     path = joinpath(dir, "temp.asdf")
     open(path, "w") do io
-        print(io,
+        print(
+            io,
             """
             #ASDF 1.0.0
             #ASDF_STANDARD 1.2.0
@@ -38,7 +39,7 @@ end
     af = load_tag(tag_unknown_mapping; extensions = true)
     obj = af.metadata["custom_obj"]
     @test obj isa AbstractDict
-    @test obj["width"]  == 42
+    @test obj["width"] == 42
     @test obj["height"] == 7
 
     # Known key still parsed as normal
@@ -234,8 +235,8 @@ end
     # The `Tagged*` wrappers delegate their collection / string interfaces to the wrapped
     # value. Loading round-trips them (see the roundtrip testset above), but the individual
     # delegated methods are pinned down directly here so they stay covered across platforms.
-    tm  = ASDF.TaggedMapping("tag:example.org:mylib/widget-1.0.0", Dict("a" => 1, "b" => 2))
-    ts  = ASDF.TaggedSequence("tag:example.org:mylib/series-1.0.0", ["alpha", "beta", "gamma"])
+    tm = ASDF.TaggedMapping("tag:example.org:mylib/widget-1.0.0", Dict("a" => 1, "b" => 2))
+    ts = ASDF.TaggedSequence("tag:example.org:mylib/series-1.0.0", ["alpha", "beta", "gamma"])
     tsc = ASDF.TaggedScalar("tag:example.org:mylib/quantity-1.0.0", "3.14")
 
     # TaggedMapping behaves as its underlying dict.

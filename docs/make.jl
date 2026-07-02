@@ -20,7 +20,7 @@ makedocs(;
         "Examples" => [
             "JWST" => "examples/jwst.md",
             "Roman" => "examples/roman.md",
-    ],
+        ],
         "Interoperability" => "interop.md",
         "API" => "api.md",
     ],
