@@ -863,7 +863,7 @@ function Base.getindex(ndarray::NDArray)
     else
         # Unreachable branch. Caught in the constructor for `NDArray`. This branch would imply that
         # `ndarray` is in invalid state; neither `source` nor `data` is given.
-        @assert false
+        @assert false # COV_EXCL_LINE
     end
 
     # Check array layout
