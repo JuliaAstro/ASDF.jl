@@ -15,6 +15,7 @@ using ASDF, AWS, AWSS3
 fpath = let
     filename = joinpath(mkpath(pkgdir(ASDF, "data")), "roman.asdf")
     path = "roman/nexus/soc_simulations/tutorial_data/r0003201001001001004_0001_wfi01_f106_cal.asdf"
+    aws_config = AWS.AWSConfig(; creds = nothing, region = "us-east-1")
     isfile(filename) || s3_get_file(aws_config, "stpubdata", path, filename)
     filename
 end
