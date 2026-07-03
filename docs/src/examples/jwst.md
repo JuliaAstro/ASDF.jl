@@ -10,22 +10,14 @@ In this example, we show how to use ASDF.jl to load and view some astronomical d
 ## Load
 
 ```@example jwst
+using ASDF, Downloads
 
 fpath = let
-    data_dir = joinpath("..", "..", "data")
-    mkpath(data_dir)
-    joinpath(data_dir, "jwst.asdf")
+    filename = joinpath(mkpath(pkgdir(ASDF, "data")), "jwst.asdf")
+    url = "https://data.science.stsci.edu/redirect/Roman/Roman_Data_Workshop/ADASS2024/jwst.asdf"
+    isfile(filename) || download(url, filename)
+    filename
 end
-
-if !isfile(fpath)
-    using Downloads: download
-
-    download("https://data.science.stsci.edu/redirect/Roman/Roman_Data_Workshop/ADASS2024/jwst.asdf", fpath)
-end
-```
-
-```@example jwst
-using ASDF
 
 af = load(fpath; extensions = true)
 ```
@@ -41,14 +33,23 @@ img_sci = let
     img
 end
 
+telescope = af["meta"]["telescope"]
+instr     = af["meta"]["instrument"]["name"]
+filt      = af["meta"]["instrument"]["filter"]
+
 fig, ax, hm = heatmap(img_sci;
+    axis = (;
+        xlabel = "X",
+        ylabel = "Y",
+        title = "$(telescope) $(instr) -- $(filt)",
+    ),
     colorrange = (1, 1e3),
     colorscale = log10,
     colormap = :cividis,
-    nan_color = :limegreen, # NaNs are handled automatically
+    nan_color = :coral,
 )
 
-Colorbar(fig[1, 2], hm)
+Colorbar(fig[1, 2], hm; label = "Counts")
 
 fig
 ```
