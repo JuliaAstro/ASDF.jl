@@ -15,7 +15,7 @@ using ASDF, Downloads
 fpath = let
     filename = joinpath(mkpath(pkgdir(ASDF, "data")), "jwst.asdf")
     url = "https://data.science.stsci.edu/redirect/Roman/Roman_Data_Workshop/ADASS2024/jwst.asdf"
-    isfile(filename) || download(url, filename)
+    isfile(filename) || Downloads.download(url, filename)
     filename
 end
 
