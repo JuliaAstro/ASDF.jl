@@ -48,19 +48,28 @@ img_sci = let
     img
 end
 
+telescope = af["meta"]["telescope"]
+instr     = af["meta"]["instrument"]["name"]
+filt      = af["meta"]["instrument"]["filter"]
+
 fig, ax, hm = heatmap(img_sci;
+    axis = (;
+        xlabel = "X",
+        ylabel = "Y",
+        title = "$(telescope) $(instr) -- $(filt)",
+    ),
     colorrange = (1, 1e3),
     colorscale = log10,
     colormap = :cividis,
-    nan_color = :limegreen,
+    nan_color = :coral,
 )
 
-Colorbar(fig[1, 2], hm)
+Colorbar(fig[1, 2], hm; label = "Counts")
 
 fig
 ```
 
-![](https://juliaastro.org/ASDF/stable/examples/jwst/7ad2d7a0.png)
+![](https://juliaastro.org/ASDF/stable/examples/jwst/3a2da978.png)
 
 ---
 
