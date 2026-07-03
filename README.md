@@ -60,7 +60,7 @@ Colorbar(fig[1, 2], hm)
 fig
 ```
 
-![](https://juliaastro.org/ASDF.jl/dev/examples/jwst/0de3c21f.png)
+![](https://juliaastro.org/ASDF/stable/examples/jwst/7ad2d7a0.png)
 
 ---
 
