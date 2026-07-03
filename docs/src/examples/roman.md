@@ -10,46 +10,48 @@ In this example, we show how to use ASDF.jl to load and view some simulated astr
 ## Load
 
 ```@example roman
+using ASDF, AWS, AWSS3
+
 fpath = let
-    data_dir = joinpath("..", "..", "data")
-    mkpath(data_dir)
-    joinpath(data_dir, "roman.asdf")
-end
-
-if !isfile(fpath)
-    using AWSS3, AWS
+    filename = joinpath(mkpath(pkgdir(ASDF, "data")), "roman.asdf")
+    path = "roman/nexus/soc_simulations/tutorial_data/r0003201001001001004_0001_wfi01_f106_cal.asdf"
     aws_config = AWS.AWSConfig(; creds = nothing, region = "us-east-1")
-    AWSConfig(nothing, "us-east-1", "json", 3)
-
-    # This is a large file, will take some time to download
-    s3_get_file(
-        aws_config,
-        "stpubdata",
-        "roman/nexus/soc_simulations/tutorial_data/r0003201001001001004_0001_wfi01_f106_cal.asdf",
-        fpath
-    )
+    isfile(filename) || s3_get_file(aws_config, "stpubdata", path, filename)
+    filename
 end
-```
-
-```@example roman
-using ASDF
 
 af = load(fpath; extensions = true, validate_checksum = false)
 ```
+
+!!! note
+    Some ASDF files produced by the Python implementation of ASDF may save a checksum in its header block computed from the original decompressed file. This will cause ASDF.jl to fail because in constrast, it computes the checksum based on the compressed (i.e., "used data"), as per the [current specification for ASDF](https://www.asdf-format.org/projects/asdf-standard/en/1.0.1/file_layout.html#block-header). To handle this potenial failure mode, we pass `validate_checksum = false` to avoid running the default checksum.
 
 ## Plot
 
 ```@example roman
 using CairoMakie
 
-img = af["roman"]["data"][]
+img_sci = let
+    img = af["roman"]["data"][]
+    @view img[begin:1000, begin:1000]
+end
 
-fig, ax, hm = heatmap(img[begin:1000, begin:1000]; colorscale = asinh, colorrange = (0.5, 4))
+telescope = af["roman"]["meta"]["telescope"]
+instr     = af["roman"]["meta"]["instrument"]["name"]
+filt      = af["roman"]["meta"]["instrument"]["optical_element"]
 
-Colorbar(fig[1, 2], hm)
+fig, ax, hm = heatmap(img_sci;
+    axis = (;
+        xlabel = "X",
+        ylabel = "Y",
+        title = "$(telescope) $(instr) -- $(filt)",
+    ),
+    colorrange = (0.5, 4),
+    colorscale = asinh,
+    colormap = :cividis,
+)
+
+Colorbar(fig[1, 2], hm; label = "Counts")
 
 fig
 ```
-
-!!! note
-    Some ASDF files produced by the Python implementation of ASDF may save a checksum in its header block computed from the original decompressed file. This will cause ASDF.jl to fail because in constrast, it computes the checksum based on the compressed (i.e., "used data"), as per the [current specification for ASDF](https://www.asdf-format.org/projects/asdf-standard/en/1.0.1/file_layout.html#block-header). To handle this potenial failure mode, we pass `validate_checksum = false` to avoid running the default checksum.
