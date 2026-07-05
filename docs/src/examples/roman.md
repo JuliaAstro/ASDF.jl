@@ -55,3 +55,6 @@ Colorbar(fig[1, 2], hm; label = "Counts")
 
 fig
 ```
+
+!!! note
+    By default, Makie.jl places the origin in the lower left corner and transposes the data, matching the convention used in the Python workshop example. To have the plot orientation match the data orientation instead, modify the above plot command to: `heatmap(arr'; axis = (; yreversed = true))`. See also [`permutedims`](https://docs.julialang.org/en/v1/base/arrays/#Base.permutedims) for a more general alternative to the adjoint (conjugate transpose) operation: [`'`](https://docs.julialang.org/en/v1/stdlib/LinearAlgebra/#Base.adjoint).
