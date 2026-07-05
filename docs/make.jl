@@ -16,7 +16,6 @@ makedocs(;
     ),
     pages = [
         "Home" => "index.md",
-        "Introduction" => "intro.md",
         "Examples" => [
             "JWST" => "examples/jwst.md",
             "Roman" => "examples/roman.md",
