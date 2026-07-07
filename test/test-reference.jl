@@ -14,7 +14,7 @@ end
 
 function roundtrip(fpath; extensions = false, validate_checksum = true)
     af = ASDF.load_file(fpath; extensions, validate_checksum)
-    fpath_roundtrip = replace(fpath, ".asdf" => "_roundtrip.asdf")
+    fpath_roundtrip = joinpath(mktempdir(), basename(replace(fpath, ".asdf" => "_roundtrip.asdf")))
     ASDF.write_file(fpath_roundtrip, af.metadata)
     af_roundtrip = ASDF.load_file(fpath_roundtrip; extensions, validate_checksum)
     return af_roundtrip, af
