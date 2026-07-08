@@ -1,14 +1,17 @@
+# https://docs.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
 version: 2
 updates:
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
   - package-ecosystem: "julia"
-    directory: "/"
+    directories: ["/", "/docs", "/test"] # Location of Julia projects
     schedule:
       interval: "weekly"
-    groups: # uncomment to group all julia package updates into a single PR
+    groups: # Group all julia package updates into a single PR
       all-julia-packages:
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "ASDF" # Ignore package itself
