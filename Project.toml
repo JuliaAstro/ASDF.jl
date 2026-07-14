@@ -1,6 +1,6 @@
 name = "ASDF"
 uuid = "686f71d1-807d-59a4-a860-28280ea06d7b"
-version = "2.0.0"
+version = "2.0.1"
 authors = ["Erik Schnetter <schnetter@gmail.com>"]
 
 [workspace]
