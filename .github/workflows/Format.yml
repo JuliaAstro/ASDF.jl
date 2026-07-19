@@ -1,11 +1,8 @@
 name: Runic.jl formatting
 on:
   push:
-    branches:
-      - 'main'
-      - 'release-'
-    tags:
-      - '*'
+    branches: [main]
+    tags: '*'
   pull_request:
 jobs:
   runic:
