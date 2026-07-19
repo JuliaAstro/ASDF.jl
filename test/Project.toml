@@ -6,3 +6,9 @@ OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 ParallelTestRunner = "d3525ed8-44d0-4b2c-a655-542cee43accc"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
+
+[compat]
+Aqua = "0.8.16"
+Documenter = "1"
+ParallelTestRunner = "2.6.2"
+YAML = "0.4.16"
