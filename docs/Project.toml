@@ -9,5 +9,9 @@ Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 
 [compat]
+AWS = "1.98"
+AWSS3 = "0.11.5"
 Documenter = "1"
+DocumenterInterLinks = "1.1"
+Downloads = "1"
 OrderedCollections = "1"
