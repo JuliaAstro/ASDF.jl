@@ -85,6 +85,44 @@ end
     )
 end
 
+@testset "implicit strides with zero-length dimensions" begin
+    # 2026/08/06: Regression test for STScI Roman L2 `.asdf` products produced by romanisim
+    # which contain `!core/ndarray` nodes (e.g. the `chisq`/`dumo` arrays)
+    # with a zero-length shape and no explicit `strides`
+    # key. The naive C-order stride formula (`stride[i] = itemsize * prod(shape[i+1:])`)
+    # collapses to zero for every dimension whose product includes a zero-length axis, which
+    # then fails the `strides` positivity check below even though no data is ever read from a
+    # zero-size array. NumPy avoids this by treating a zero-length axis as though it were
+    # length 1 when computing default C-contiguous strides (`PyArray_NewFromDescr`), which the
+    # reference Python `asdf` package relies on. Expected values below were verified against
+    # `np.ndarray(shape, dtype, buffer, offset, strides=None, order='C').strides`.
+    cases = [
+        (Int64[0, 0], ASDF.Datatype_float16, Int64[2, 2]),
+        (Int64[0, 5], ASDF.Datatype_float32, Int64[20, 4]),
+        (Int64[5, 0], ASDF.Datatype_float32, Int64[4, 4]),
+        (Int64[0, 0, 3], ASDF.Datatype_float32, Int64[12, 12, 4]),
+        (Int64[2, 0, 3], ASDF.Datatype_float32, Int64[12, 12, 4]),
+        (Int64[0, 2, 3], ASDF.Datatype_float32, Int64[24, 12, 4]),
+    ]
+    for (shape, datatype, expected_strides) in cases
+        nd = ASDF.NDArray(
+            ASDF.LazyBlockHeaders(), Int64(0), nothing, shape, datatype, ASDF.host_byteorder, Int64(0), nothing,
+        )
+        @test nd.strides == expected_strides
+    end
+
+    @testset "materializes a zero-size block-backed array" begin
+        lbh = ASDF.LazyBlockHeaders()
+        push!(lbh.block_headers, make_block_header(UInt8[]))
+        nd = ASDF.NDArray(
+            lbh, Int64(0), nothing, Int64[0, 0], ASDF.Datatype_float16, ASDF.host_byteorder, Int64(0), nothing,
+        )
+        arr = nd[]
+        @test size(arr) == (0, 0)
+        @test eltype(arr) == Float16
+    end
+end
+
 @testset "getindex" begin
     opposite = ASDF.host_byteorder == ASDF.Byteorder_little ? ASDF.Byteorder_big : ASDF.Byteorder_little
 

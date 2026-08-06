@@ -785,9 +785,21 @@ function NDArray(
         offset = 0
     end
     if strides isa Nothing
-        # Calculate byte strides in C order
+        # Calculate byte strides in C order. Any dimension of length zero is treated as
+        # length 1 within this product only (not in `shape` itself); this matches NumPy's
+        # convention for computing default C-contiguous strides (`PyArray_NewFromDescr`),
+        # relied on by the reference Python `asdf` package when constructing arrays via
+        # `np.ndarray(shape, dtype, data, offset, None, order)`. Without the clamp, any
+        # zero-length dimension collapses the strides of every outer dimension whose
+        # product includes it down to zero, which then fails the `strides` positivity
+        # check below even though no data is ever read from a zero-size array. Negative
+        # entries are left unclamped so the `shape` negativity check below still reports
+        # them with its own clear error message. STScI Roman L2 `.asdf` products contain
+        # zero-shape arrays (e.g. `chisq`, `dumo`) with no explicit `strides` key,
+        # triggering this exact failure prior to the fix.
         sz = sizeof(Type(datatype))
-        strides = reverse(cumprod([sz; reverse(shape[(begin + 1):end])]))
+        clamped_shape = [s == 0 ? 1 : s for s in shape[(begin + 1):end]]
+        strides = reverse(cumprod([sz; reverse(clamped_shape)]))
     end
     return NDArray(
         lazy_block_headers, source, data, Vector{Int64}(shape), datatype, byteorder, Int64(offset), Vector{Int64}(strides)
@@ -833,7 +845,7 @@ size(result) == Tuple(reverse(ndarray.shape))
 eltype(result) == ASDF.materialized_eltype(ndarray.datatype)
 ```
 
-For the `ucs4` and `ascii` string datatypes, [`materialized_eltype`](@ref) is a thin `AbstractString` view over the characters ([`UCS4String`](@ref) / [`AsciiString`](@ref); see [`stringify_data`](@ref)). For all other datatypes, `eltype(result) == Type(ndarray.datatype)` and additionally `sizeof(eltype) .* strides(result) == Tuple(reverse(ndarray.strides))`.
+For the `ucs4` and `ascii` string datatypes, [`materialized_eltype`](@ref) is a thin `AbstractString` view over the characters ([`UCS4String`](@ref) / [`AsciiString`](@ref); see [`stringify_data`](@ref)). For all other datatypes, `eltype(result) == Type(ndarray.datatype)` and additionally, for every dimension with more than one element, `sizeof(eltype) .* strides(result) == Tuple(reverse(ndarray.strides))` along that dimension. (Dimensions of length 0 or 1 have no well-defined stride -- there is no pair of adjacent elements to space apart -- so `reshape`/`reinterpret` are free to report any value there, and such dimensions are excluded from this check.)
 """
 function Base.getindex(ndarray::NDArray)
     if ndarray.data !== nothing
@@ -870,7 +882,13 @@ function Base.getindex(ndarray::NDArray)
     # Check array layout
     @assert size(data) == Tuple(reverse(ndarray.shape)) # `data` conforms to specified `ndarray.shape`
     @assert eltype(data) == Type(ndarray.datatype) # `data` matches type specified by `ndarray.datatype`
-    if sizeof(eltype(data)) .* Base.strides(data) != Tuple(reverse(ndarray.strides))
+    # Dimensions of length 0 or 1 have no meaningful stride (there is no pair of adjacent
+    # elements to space apart along them), so `reshape`/`reinterpret` are free to report any
+    # value for them; only compare strides along dimensions with more than one element.
+    computed_strides = sizeof(eltype(data)) .* Base.strides(data)
+    expected_strides = Tuple(reverse(ndarray.strides))
+    data_shape = size(data)
+    if any(data_shape[i] > 1 && computed_strides[i] != expected_strides[i] for i in eachindex(data_shape))
         error("`data` has different stride from `ndarray.strides`")
     end
 
