@@ -882,13 +882,14 @@ function Base.getindex(ndarray::NDArray)
     # Check array layout
     @assert size(data) == Tuple(reverse(ndarray.shape)) # `data` conforms to specified `ndarray.shape`
     @assert eltype(data) == Type(ndarray.datatype) # `data` matches type specified by `ndarray.datatype`
-    # Dimensions of length 0 or 1 have no meaningful stride (there is no pair of adjacent
-    # elements to space apart along them), so `reshape`/`reinterpret` are free to report any
-    # value for them; only compare strides along dimensions with more than one element.
+    # A dimension of length 1 has no meaningful stride (there is no pair of adjacent elements
+    # to space apart along it), and in an empty array no dimension does — Julia reports
+    # stride 0 along any dimension whose faster-varying dimensions include a zero length.
+    # Only compare strides where they are meaningful.
     computed_strides = sizeof(eltype(data)) .* Base.strides(data)
     expected_strides = Tuple(reverse(ndarray.strides))
     data_shape = size(data)
-    if any(data_shape[i] > 1 && computed_strides[i] != expected_strides[i] for i in eachindex(data_shape))
+    if !isempty(data) && any(data_shape[i] > 1 && computed_strides[i] != expected_strides[i] for i in eachindex(data_shape))
         error("`data` has different stride from `ndarray.strides`")
     end
 
