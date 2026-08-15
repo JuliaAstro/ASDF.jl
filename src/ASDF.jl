@@ -845,7 +845,7 @@ size(result) == Tuple(reverse(ndarray.shape))
 eltype(result) == ASDF.materialized_eltype(ndarray.datatype)
 ```
 
-For the `ucs4` and `ascii` string datatypes, [`materialized_eltype`](@ref) is a thin `AbstractString` view over the characters ([`UCS4String`](@ref) / [`AsciiString`](@ref); see [`stringify_data`](@ref)). For all other datatypes, `eltype(result) == Type(ndarray.datatype)` and additionally, for every dimension with more than one element, `sizeof(eltype) .* strides(result) == Tuple(reverse(ndarray.strides))` along that dimension. (Dimensions of length 0 or 1 have no well-defined stride -- there is no pair of adjacent elements to space apart -- so `reshape`/`reinterpret` are free to report any value there, and such dimensions are excluded from this check.)
+For the `ucs4` and `ascii` string datatypes, [`materialized_eltype`](@ref) is a thin `AbstractString` view over the characters ([`UCS4String`](@ref) / [`AsciiString`](@ref); see [`stringify_data`](@ref)). For all other datatypes, `eltype(result) == Type(ndarray.datatype)` and additionally, when the array has at least one element, `sizeof(eltype) .* strides(result) == Tuple(reverse(ndarray.strides))` along every dimension with more than one element. (A dimension of length 1 has no well-defined stride, there is no pair of adjacent elements to space apart along it, and in a zero-element array no dimension does, so `reshape`/`reinterpret` are free to report any value there; such strides are excluded from this check.)
 """
 function Base.getindex(ndarray::NDArray)
     if ndarray.data !== nothing
