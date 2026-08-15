@@ -86,16 +86,11 @@ end
 end
 
 @testset "implicit strides with zero-length dimensions" begin
-    # 2026/08/06: Regression test for STScI Roman L2 `.asdf` products produced by romanisim
-    # which contain `!core/ndarray` nodes (e.g. the `chisq`/`dumo` arrays)
-    # with a zero-length shape and no explicit `strides`
-    # key. The naive C-order stride formula (`stride[i] = itemsize * prod(shape[i+1:])`)
-    # collapses to zero for every dimension whose product includes a zero-length axis, which
-    # then fails the `strides` positivity check below even though no data is ever read from a
-    # zero-size array. NumPy avoids this by treating a zero-length axis as though it were
-    # length 1 when computing default C-contiguous strides (`PyArray_NewFromDescr`), which the
-    # reference Python `asdf` package relies on. Expected values below were verified against
-    # `np.ndarray(shape, dtype, buffer, offset, strides=None, order='C').strides`.
+    # 2026/08/06: Regression test for STScI Roman L2 `.asdf` products produced by romanisim,
+    # which contain `!core/ndarray` nodes (e.g. `chisq`/`dumo`) with a zero-length shape and
+    # no explicit `strides` key; see the default-strides comment in the `NDArray` outer
+    # constructor for the NumPy convention involved. Expected values below were verified
+    # against `np.ndarray(shape, dtype, buffer, offset, strides=None, order='C').strides`.
     cases = [
         (Int64[0, 0], ASDF.Datatype_float16, Int64[2, 2]),
         (Int64[0, 5], ASDF.Datatype_float32, Int64[20, 4]),
