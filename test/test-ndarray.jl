@@ -100,21 +100,16 @@ end
         (Int64[0, 2, 3], ASDF.Datatype_float32, Int64[24, 12, 4]),
     ]
     for (shape, datatype, expected_strides) in cases
-        nd = ASDF.NDArray(
-            ASDF.LazyBlockHeaders(), Int64(0), nothing, shape, datatype, ASDF.host_byteorder, Int64(0), nothing,
-        )
-        @test nd.strides == expected_strides
-    end
-
-    @testset "materializes a zero-size block-backed array" begin
         lbh = ASDF.LazyBlockHeaders()
         push!(lbh.block_headers, make_block_header(UInt8[]))
-        nd = ASDF.NDArray(
-            lbh, Int64(0), nothing, Int64[0, 0], ASDF.Datatype_float16, ASDF.host_byteorder, Int64(0), nothing,
+        nd = make_ndarray(;
+            lazy_block_headers = lbh, source = Int64(0), data = nothing, shape, datatype, strides = nothing,
         )
+        @test nd.strides == expected_strides
+        # Materialize from an empty block to catch stride-check false positives at read time.
         arr = nd[]
-        @test size(arr) == (0, 0)
-        @test eltype(arr) == Float16
+        @test size(arr) == Tuple(reverse(shape))
+        @test eltype(arr) == Type(datatype)
     end
 end
 
