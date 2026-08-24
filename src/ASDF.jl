@@ -785,18 +785,15 @@ function NDArray(
         offset = 0
     end
     if strides isa Nothing
-        # Calculate byte strides in C order. Any dimension of length zero is treated as
-        # length 1 within this product only (not in `shape` itself); this matches NumPy's
-        # convention for computing default C-contiguous strides (`PyArray_NewFromDescr`),
-        # relied on by the reference Python `asdf` package when constructing arrays via
-        # `np.ndarray(shape, dtype, data, offset, None, order)`. Without the clamp, any
-        # zero-length dimension collapses the strides of every outer dimension whose
+        # Calculate byte strides in C order, treating any zero-length dimension as
+        # length 1 within this product only (not in `shape` itself). This matches NumPy's
+        # convention for default C-contiguous strides (`PyArray_NewFromDescr`),
+        # relied on by the reference Python `asdf` package. Without the clamp, a
+        # zero-length dimension collapses the stride of every outer dimension whose
         # product includes it down to zero, which then fails the `strides` positivity
         # check below even though no data is ever read from a zero-size array. Negative
-        # entries are left unclamped so the `shape` negativity check below still reports
-        # them with its own clear error message. STScI Roman L2 `.asdf` products contain
-        # zero-shape arrays (e.g. `chisq`, `dumo`) with no explicit `strides` key,
-        # triggering this exact failure prior to the fix.
+        # entries are left unclamped so the shape negativity check below still reports them with its own clear error message. STScI Roman L2 `.asdf` products contain such
+        # zero-shape arrays (e.g. `chisq`, `dumo`) with no explicit `strides` key.
         sz = sizeof(Type(datatype))
         strides = reverse(cumprod([sz; reverse(max.(shape[(begin + 1):end], 1))]))
     end
