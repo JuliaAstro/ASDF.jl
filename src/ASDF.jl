@@ -798,8 +798,7 @@ function NDArray(
         # zero-shape arrays (e.g. `chisq`, `dumo`) with no explicit `strides` key,
         # triggering this exact failure prior to the fix.
         sz = sizeof(Type(datatype))
-        clamped_shape = [s == 0 ? 1 : s for s in shape[(begin + 1):end]]
-        strides = reverse(cumprod([sz; reverse(clamped_shape)]))
+        strides = reverse(cumprod([sz; reverse(max.(shape[(begin + 1):end], 1))]))
     end
     return NDArray(
         lazy_block_headers, source, data, Vector{Int64}(shape), datatype, byteorder, Int64(offset), Vector{Int64}(strides)

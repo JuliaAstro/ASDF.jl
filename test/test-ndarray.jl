@@ -113,6 +113,26 @@ end
     end
 end
 
+@testset "implicit strides with negative-shape elements" begin
+    # Regression test: the implicit-strides branch of
+    # the `NDArray` outer constructor clamps negative entries so the
+    # `strides` positivity check downstream can't misfire on them. That clamping only affects
+    # the temporary array used to compute `strides`; it must not suppress the `shape`
+    # negativity check in the inner constructor, which always receives the original,
+    # unclamped `shape`. Cover a negative element both outside (`shape[1]`) and inside
+    # (`shape[2:end]`) the slice passed to `max.(...)`.
+    for shape in (Int64[-1, 3], Int64[3, -1])
+        test_ndarray(
+            ArgumentError,
+            "`shape` cannot have negative elements.";
+            source = Int64(0),
+            data = nothing,
+            shape,
+            strides = nothing,
+        )
+    end
+end
+
 @testset "getindex" begin
     opposite = ASDF.host_byteorder == ASDF.Byteorder_little ? ASDF.Byteorder_big : ASDF.Byteorder_little
 
