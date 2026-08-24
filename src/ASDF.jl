@@ -785,9 +785,17 @@ function NDArray(
         offset = 0
     end
     if strides isa Nothing
-        # Calculate byte strides in C order
+        # Calculate byte strides in C order, treating any zero-length dimension as
+        # length 1 within this product only (not in `shape` itself). This matches NumPy's
+        # convention for default C-contiguous strides (`PyArray_NewFromDescr`),
+        # relied on by the reference Python `asdf` package. Without the clamp, a
+        # zero-length dimension collapses the stride of every outer dimension whose
+        # product includes it down to zero, which then fails the `strides` positivity
+        # check below even though no data is ever read from a zero-size array. Negative
+        # entries are left unclamped so the shape negativity check below still reports them with its own clear error message. STScI Roman L2 `.asdf` products contain such
+        # zero-shape arrays (e.g. `chisq`, `dumo`) with no explicit `strides` key.
         sz = sizeof(Type(datatype))
-        strides = reverse(cumprod([sz; reverse(shape[(begin + 1):end])]))
+        strides = reverse(cumprod([sz; reverse(max.(shape[(begin + 1):end], 1))]))
     end
     return NDArray(
         lazy_block_headers, source, data, Vector{Int64}(shape), datatype, byteorder, Int64(offset), Vector{Int64}(strides)
@@ -833,7 +841,7 @@ size(result) == Tuple(reverse(ndarray.shape))
 eltype(result) == ASDF.materialized_eltype(ndarray.datatype)
 ```
 
-For the `ucs4` and `ascii` string datatypes, [`materialized_eltype`](@ref) is a thin `AbstractString` view over the characters ([`UCS4String`](@ref) / [`AsciiString`](@ref); see [`stringify_data`](@ref)). For all other datatypes, `eltype(result) == Type(ndarray.datatype)` and additionally `sizeof(eltype) .* strides(result) == Tuple(reverse(ndarray.strides))`.
+For the `ucs4` and `ascii` string datatypes, [`materialized_eltype`](@ref) is a thin `AbstractString` view over the characters ([`UCS4String`](@ref) / [`AsciiString`](@ref); see [`stringify_data`](@ref)). For all other datatypes, `eltype(result) == Type(ndarray.datatype)` and additionally, when the array has at least one element, `sizeof(eltype) .* strides(result) == Tuple(reverse(ndarray.strides))` along every dimension with more than one element. (A dimension of length 1 has no well-defined stride, there is no pair of adjacent elements to space apart along it, and in a zero-element array no dimension does, so `reshape`/`reinterpret` are free to report any value there; such strides are excluded from this check.)
 """
 function Base.getindex(ndarray::NDArray)
     if ndarray.data !== nothing
@@ -870,7 +878,14 @@ function Base.getindex(ndarray::NDArray)
     # Check array layout
     @assert size(data) == Tuple(reverse(ndarray.shape)) # `data` conforms to specified `ndarray.shape`
     @assert eltype(data) == Type(ndarray.datatype) # `data` matches type specified by `ndarray.datatype`
-    if sizeof(eltype(data)) .* Base.strides(data) != Tuple(reverse(ndarray.strides))
+    # A dimension of length 1 has no meaningful stride (there is no pair of adjacent elements
+    # to space apart along it), and in an empty array no dimension does — Julia reports
+    # stride 0 along any dimension whose faster-varying dimensions include a zero length.
+    # Only compare strides where they are meaningful.
+    computed_strides = sizeof(eltype(data)) .* Base.strides(data)
+    expected_strides = Tuple(reverse(ndarray.strides))
+    data_shape = size(data)
+    if !isempty(data) && any(data_shape[i] > 1 && computed_strides[i] != expected_strides[i] for i in eachindex(data_shape))
         error("`data` has different stride from `ndarray.strides`")
     end
 

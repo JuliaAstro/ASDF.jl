@@ -85,6 +85,54 @@ end
     )
 end
 
+@testset "implicit strides with zero-length dimensions" begin
+    # 2026/08/06: Regression test for STScI Roman L2 `.asdf` products produced by romanisim,
+    # which contain `!core/ndarray` nodes (e.g. `chisq`/`dumo`) with a zero-length shape and
+    # no explicit `strides` key; see the default-strides comment in the `NDArray` outer
+    # constructor for the NumPy convention involved. Expected values below were verified
+    # against `np.ndarray(shape, dtype, buffer, offset, strides=None, order='C').strides`.
+    cases = [
+        (Int64[0, 0], ASDF.Datatype_float16, Int64[2, 2]),
+        (Int64[0, 5], ASDF.Datatype_float32, Int64[20, 4]),
+        (Int64[5, 0], ASDF.Datatype_float32, Int64[4, 4]),
+        (Int64[0, 0, 3], ASDF.Datatype_float32, Int64[12, 12, 4]),
+        (Int64[2, 0, 3], ASDF.Datatype_float32, Int64[12, 12, 4]),
+        (Int64[0, 2, 3], ASDF.Datatype_float32, Int64[24, 12, 4]),
+    ]
+    for (shape, datatype, expected_strides) in cases
+        lbh = ASDF.LazyBlockHeaders()
+        push!(lbh.block_headers, make_block_header(UInt8[]))
+        nd = make_ndarray(;
+            lazy_block_headers = lbh, source = Int64(0), data = nothing, shape, datatype, strides = nothing,
+        )
+        @test nd.strides == expected_strides
+        # Materialize from an empty block to catch stride-check false positives at read time.
+        arr = nd[]
+        @test size(arr) == Tuple(reverse(shape))
+        @test eltype(arr) == Type(datatype)
+    end
+end
+
+@testset "implicit strides with negative-shape elements" begin
+    # Regression test: the implicit-strides branch of
+    # the `NDArray` outer constructor clamps negative entries so the
+    # `strides` positivity check downstream can't misfire on them. That clamping only affects
+    # the temporary array used to compute `strides`; it must not suppress the `shape`
+    # negativity check in the inner constructor, which always receives the original,
+    # unclamped `shape`. Cover a negative element both outside (`shape[1]`) and inside
+    # (`shape[2:end]`) the slice passed to `max.(...)`.
+    for shape in (Int64[-1, 3], Int64[3, -1])
+        test_ndarray(
+            ArgumentError,
+            "`shape` cannot have negative elements.";
+            source = Int64(0),
+            data = nothing,
+            shape,
+            strides = nothing,
+        )
+    end
+end
+
 @testset "getindex" begin
     opposite = ASDF.host_byteorder == ASDF.Byteorder_little ? ASDF.Byteorder_big : ASDF.Byteorder_little
 
