@@ -299,7 +299,7 @@ function read_block(header::BlockHeader)
             error("Invalid compression format found: $compression")
         end
         d_size = Int64(header.data_size)
-        data = decode(codec, data; max_size=d_size, size_hint=d_size)
+        data = decode(codec, data; max_size = d_size, size_hint = d_size)
     end
     data::AbstractVector{UInt8}
 
