@@ -36,7 +36,7 @@ Identifies the compression algorithm used for a data block. Available variants:
 | `C_Bzip2`        | `bzp2`         | ChunkCodecLibBzip2.jl  | Good ratio, moderate speed (default)                          |
 | `C_Lz4` (:block) | `lz4\\0`       | ChunkCodecLibLz4.jl    | Fastest decompression, Python-compatible                      |
 | `C_Lz4` (:frame) | `lz4\\0`       | ChunkCodecLibLz4.jl    | LZ4 frame format for non-Python consumers                     |
-| `C_Xz`           | `xz\\0\\0`     | CodecXz.jl             | Highest compression ratio, slowest                            |
+| `C_Xz`           | `xz\\0\\0`     | ChunkCodecLibLzma.jl   | Highest compression ratio, slowest                            |
 | `C_Zlib`         | `zlib`         | ChunkCodecLibZlib.jl   | Broad compatibility                                           |
 | `C_Zstd`         | `zstd`         | ChunkCodecLibZstd.jl   | Best ratio/speed trade-off                                    |
 """
