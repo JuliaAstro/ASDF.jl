@@ -3,9 +3,9 @@ module ASDF
 using ChunkCodecLibBlosc: BloscCodec, BloscEncodeOptions
 using ChunkCodecLibBzip2: BZ2Codec, BZ2EncodeOptions
 using ChunkCodecLibLz4: LZ4BlockCodec, LZ4FrameCodec, LZ4BlockEncodeOptions, LZ4FrameEncodeOptions
+using ChunkCodecLibLzma: XZCodec, XZEncodeOptions
 using ChunkCodecLibZlib: ZlibCodec, ZlibEncodeOptions
 using ChunkCodecLibZstd: ZstdCodec, ZstdEncodeOptions, decode, encode
-using CodecXz: XzCompressor, XzDecompressor
 using MD5: md5
 using PkgVersion: PkgVersion
 using StridedViews: StridedView
@@ -36,7 +36,7 @@ Identifies the compression algorithm used for a data block. Available variants:
 | `C_Bzip2`        | `bzp2`         | ChunkCodecLibBzip2.jl  | Good ratio, moderate speed (default)                          |
 | `C_Lz4` (:block) | `lz4\\0`       | ChunkCodecLibLz4.jl    | Fastest decompression, Python-compatible                      |
 | `C_Lz4` (:frame) | `lz4\\0`       | ChunkCodecLibLz4.jl    | LZ4 frame format for non-Python consumers                     |
-| `C_Xz`           | `xz\\0\\0`     | CodecXz.jl             | Highest compression ratio, slowest                            |
+| `C_Xz`           | `xz\\0\\0`     | ChunkCodecLibLzma.jl   | Highest compression ratio, slowest                            |
 | `C_Zlib`         | `zlib`         | ChunkCodecLibZlib.jl   | Broad compatibility                                           |
 | `C_Zstd`         | `zstd`         | ChunkCodecLibZstd.jl   | Best ratio/speed trade-off                                    |
 """
@@ -282,8 +282,6 @@ function read_block(header::BlockHeader)
     compression = compression_enums[header.compression]
     if compression == C_None
         # do nothing, the block is uncompressed
-    elseif compression == C_Xz
-        data = transcode(XzDecompressor, data)
     elseif compression == C_Lz4
         data = decode_Lz4(data)
     else
@@ -291,6 +289,8 @@ function read_block(header::BlockHeader)
             codec = BloscCodec()
         elseif compression == C_Bzip2
             codec = BZ2Codec()
+        elseif compression == C_Xz
+            codec = XZCodec()
         elseif compression == C_Zlib
             codec = ZlibCodec()
         elseif compression == C_Zstd
@@ -298,7 +298,8 @@ function read_block(header::BlockHeader)
         else
             error("Invalid compression format found: $compression")
         end
-        data = decode(codec, data)
+        d_size = Int64(header.data_size)
+        data = decode(codec, data; max_size = d_size, size_hint = d_size)
     end
     data::AbstractVector{UInt8}
 
@@ -1835,11 +1836,6 @@ function write_file(filename::AbstractString, document::AbstractDict)
             # TODO: Write directly to file
             if array.compression == C_None
                 data = input
-            elseif array.compression == C_Xz
-                # Copy
-                # TODO: Don't copy input
-                input = input isa Vector ? input : Vector(input)
-                data = transcode(XzCompressor, input)
             elseif array.compression == C_Lz4 && array.lz4_layout == :block
                 data = encode_Lz4_block(input)
                 #data = encode(LZ4BlockEncodeOptions(), input) # Not compatible with Python asdf
@@ -1850,6 +1846,8 @@ function write_file(filename::AbstractString, document::AbstractDict)
                     encode_options = BZ2EncodeOptions(; blockSize100k = 9)
                 elseif array.compression == C_Lz4 && array.lz4_layout == :frame
                     encode_options = LZ4FrameEncodeOptions(; compressionLevel = 12, blockSizeID = 7)
+                elseif array.compression == C_Xz
+                    encode_options = XZEncodeOptions(; preset = UInt32(6))
                 elseif array.compression == C_Zlib
                     encode_options = ZlibEncodeOptions(; level = 9)
                 elseif array.compression == C_Zstd
