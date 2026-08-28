@@ -10,8 +10,8 @@
             "element1" => ASDF.NDArrayWrapper(array; compression = ASDF.C_None),
             "element2" => ASDF.NDArrayWrapper(array; compression = ASDF.C_Blosc),
             "element3" => ASDF.NDArrayWrapper(array; compression = ASDF.C_Bzip2),
-            "element4" => ASDF.NDArrayWrapper(array; compression = ASDF.C_Lz4, lz4_layout = :block),
-            "element5" => ASDF.NDArrayWrapper(array; compression = ASDF.C_Lz4, lz4_layout = :frame),
+            "element4" => ASDF.NDArrayWrapper(array; compression = ASDF.C_Lz4),
+            "element5" => ASDF.NDArrayWrapper(array; compression = ASDF.C_Lz4F),
             "element6" => ASDF.NDArrayWrapper(array; compression = ASDF.C_Xz),
             "element7" => ASDF.NDArrayWrapper(array; compression = ASDF.C_Zlib),
             "element8" => ASDF.NDArrayWrapper(array; compression = ASDF.C_Zstd),
@@ -41,6 +41,12 @@
         @test size(element′) == size(element)
         @test element′ == element
     end
+
+    # Blocks fall back to uncompressed storage when compression does not shrink them, so check the
+    # labels to make sure the two LZ4 code paths actually ran.
+    label(name) = doc′.lazy_block_headers.block_headers[doc′["group"][name].source + 1].compression
+    @test label("element4") == ASDF.compression_keys[ASDF.C_Lz4]
+    @test label("element5") == ASDF.compression_keys[ASDF.C_Lz4F]
 
     @test_throws "`array` has invalid state: `compression` field has value not specified in `Compression` enum." begin
         doc = Dict{Any, Any}("field1" => ASDF.NDArrayWrapper([5, 6, 7, 8]; compression = ASDF.C_Blosc2))

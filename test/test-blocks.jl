@@ -46,6 +46,11 @@ end
         compression = ASDF.C_Blosc2,
     )
     test_read_block(
+        # The 4 data bytes parse as a big-endian chunk length of 0x05060708
+        "LZ4 chunk at byte 1 extends past the end of the block";
+        compression = ASDF.C_Lz4,
+    )
+    test_read_block(
         "Actual data size different from declared data size in header.";
         data_size = UInt64(9),
     )

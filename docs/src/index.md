@@ -108,7 +108,7 @@ af = load("intro_compressed.asdf")
       name: "ASDF.jl"
       author: "Erik Schnetter <schnetter@gmail.com>"
       homepage: "https://github.com/JuliaAstro/ASDF.jl"
-      version: "2.0.1"
+      version: "2.1.0"
     ...
     �BLK0   f�0xj�sq���r#ASDF BLOCK INDEX
     %YAML 1.1
