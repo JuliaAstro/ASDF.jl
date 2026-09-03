@@ -2,7 +2,7 @@ module ASDF
 
 using ChunkCodecLibBlosc: BloscCodec, BloscEncodeOptions
 using ChunkCodecLibBzip2: BZ2Codec, BZ2EncodeOptions
-using ChunkCodecLibLz4: LZ4BlockCodec, LZ4FrameCodec, LZ4BlockEncodeOptions, LZ4FrameEncodeOptions
+using ChunkCodecLibLz4: LZ4NumcodecsCodec, LZ4FrameCodec, LZ4NumcodecsEncodeOptions, LZ4FrameEncodeOptions
 using ChunkCodecLibLzma: XZCodec, XZEncodeOptions
 using ChunkCodecLibZlib: ZlibCodec, ZlibEncodeOptions
 using ChunkCodecLibZstd: ZstdCodec, ZstdEncodeOptions, decode, encode
@@ -34,13 +34,15 @@ Identifies the compression algorithm used for a data block. Available variants:
 | `C_Blosc`        | `blsc`         | ChunkCodecLibBlosc.jl  | Multi-threaded, shuffle-aware, best with typed numeric arrays |
 | `C_Blosc2`       | `bls2`         | See [Issue #49](https://github.com/JuliaIO/ChunkCodecs.jl/issues/49) | Like Blosc but supports more than 2 GB of data                |
 | `C_Bzip2`        | `bzp2`         | ChunkCodecLibBzip2.jl  | Good ratio, moderate speed (default)                          |
-| `C_Lz4` (:block) | `lz4\\0`       | ChunkCodecLibLz4.jl    | Fastest decompression, Python-compatible                      |
-| `C_Lz4` (:frame) | `lz4\\0`       | ChunkCodecLibLz4.jl    | LZ4 frame format for non-Python consumers                     |
+| `C_Lz4`          | `lz4\\0`       | ChunkCodecLibLz4.jl    | Fastest decompression, Python-compatible                      |
+| `C_Lz4F`         | `lz4f`         | ChunkCodecLibLz4.jl    | LZ4 frame format for non-Python consumers                     |
 | `C_Xz`           | `xz\\0\\0`     | ChunkCodecLibLzma.jl   | Highest compression ratio, slowest                            |
 | `C_Zlib`         | `zlib`         | ChunkCodecLibZlib.jl   | Broad compatibility                                           |
 | `C_Zstd`         | `zstd`         | ChunkCodecLibZstd.jl   | Best ratio/speed trade-off                                    |
+
+Only `zlib` and `bzp2` are defined by the ASDF standard. `lz4` follows the Python `asdf` implementation's built-in compressor, `blsc`/`bls2`/`lz4f`/`zstd` follow its [asdf-compression](https://github.com/asdf-format/asdf-compression) extension, and `xz` has no Python counterpart.
 """
-@enum Compression C_None C_Blosc C_Blosc2 C_Bzip2 C_Lz4 C_Xz C_Zlib C_Zstd
+@enum Compression C_None C_Blosc C_Blosc2 C_Bzip2 C_Lz4 C_Lz4F C_Xz C_Zlib C_Zstd
 
 const compression_keys = Dict{Compression, Vector{UInt8}}(
     C_None => UInt8[0, 0, 0, 0],
@@ -48,6 +50,7 @@ const compression_keys = Dict{Compression, Vector{UInt8}}(
     C_Blosc2 => Vector{UInt8}("bls2"),
     C_Bzip2 => Vector{UInt8}("bzp2"),
     C_Lz4 => Vector{UInt8}("lz4\0"),
+    C_Lz4F => Vector{UInt8}("lz4f"),
     C_Xz => Vector{UInt8}("xz\0\0"),
     C_Zlib => Vector{UInt8}("zlib"),
     C_Zstd => Vector{UInt8}("zstd"),
@@ -173,8 +176,6 @@ big2native_U8(bytes::AbstractVector{UInt8}) = bytes[1]
 big2native_U16(bytes::AbstractVector{UInt8}) = (UInt16(bytes[1]) << 8) | bytes[2]
 big2native_U32(bytes::AbstractVector{UInt8}) = (UInt32(big2native_U16(@view bytes[1:2])) << 16) | big2native_U16(@view bytes[3:4])
 big2native_U64(bytes::AbstractVector{UInt8}) = (UInt64(big2native_U32(@view bytes[1:4])) << 32) | big2native_U32(@view bytes[5:8])
-# Read a 4-byte little-endian UInt32 (used for lz4.block store_size prefix)
-little2native_U32(bytes::AbstractVector{UInt8}) = (UInt32(bytes[1])) | (UInt32(bytes[2]) << 8) | (UInt32(bytes[3]) << 16) | (UInt32(bytes[4]) << 24)
 
 native2big_U8(val::UInt8) = UInt8[val]
 native2big_U16(val::UInt16) = UInt8[(val >>> 0x08) & 0xff, (val >>> 0x00) & 0xff]
@@ -283,12 +284,17 @@ function read_block(header::BlockHeader)
     if compression == C_None
         # do nothing, the block is uncompressed
     elseif compression == C_Lz4
-        data = decode_Lz4(data)
+        # TODO: Once an `LZ4ASDFCodec` is upstreamed to ChunkCodecs.jl,
+        # this could be added to the uniform codec branches below.
+        # https://github.com/JuliaAstro/ASDF.jl/issues/72
+        data = decode_Lz4(data, Int(header.data_size))
     else
         if compression == C_Blosc
             codec = BloscCodec()
         elseif compression == C_Bzip2
             codec = BZ2Codec()
+        elseif compression == C_Lz4F
+            codec = LZ4FrameCodec()
         elseif compression == C_Xz
             codec = XZCodec()
         elseif compression == C_Zlib
@@ -310,45 +316,33 @@ function read_block(header::BlockHeader)
     return data
 end
 
-function decode_Lz4(data)
-    if (# LZ4 Frame magic bytes 04 22 4D 18
-            length(data) >= 4 &&
-                data[1] == 0x04 && data[2] == 0x22 &&
-                data[3] == 0x4D && data[4] == 0x18
-        )
-        return decode(LZ4FrameCodec(), data)
-    else
-        # If the data was originally created from Python's ASDF, then it will be in block instead of frame layout,
-        # where each chunk is:
-        #
-        #   [4 bytes, big-endian]    compressed chunk size (the ASDF envelope)
-        #   [4 bytes, little-endian] uncompressed chunk size (lz4.block store_size=True prefix)
-        #   [N bytes]                raw LZ4 block payload
-        #
-        # lz4.block.compress() defaults to store_size=True, which prepends the
-        # uncompressed size as a little-endian uint32. LZ4BlockCodec expects only
-        # the raw block, so both the outer BE envelope and the inner LE prefix must
-        # be stripped, with the LE value used as the uncompressed_size hint.
+# `lz4\0` blocks, as written by Python asdf's built-in `lz4` compressor: a concatenation of chunks
+# `[UInt32 big-endian n][n bytes]`, where the n bytes are the numcodecs LZ4 format
+# (Int32 little-endian decoded size + raw LZ4 block), i.e. `lz4.block.compress(store_size=True)`.
+const LZ4_CHUNK_SIZE = 1 << 22 # Python asdf's default `compression_block_size`
 
-        out = UInt8[]
-        pos = 1
-
-        while pos <= length(data)
-            # Outer ASDF envelope: big-endian compressed chunk size
-            compressed_chunk_size = Int(big2native_U32(@view data[pos:(pos + 3)]))
-            pos += 4
-            # Inner lz4.block store_size=True prefix: little-endian uncompressed size
-            uncompressed_chunk_size = Int(little2native_U32(@view data[pos:(pos + 3)]))
-            pos += 4
-            # Raw LZ4 block payload (compressed_chunk_size includes the 4-byte LE prefix)
-            payload_len = compressed_chunk_size - 4
-            payload = @view data[pos:(pos + payload_len - 1)]
-            pos += payload_len
-            append!(out, decode(LZ4BlockCodec(), payload; max_size = uncompressed_chunk_size, size_hint = uncompressed_chunk_size))
-        end
-
-        return out
+function decode_Lz4(data::AbstractVector{UInt8}, data_size::Int)
+    out = sizehint!(UInt8[], data_size)
+    pos = 1
+    while pos <= length(data)
+        pos + 3 <= length(data) || error("Truncated LZ4 chunk header at byte $pos")
+        n = Int(big2native_U32(@view data[pos:(pos + 3)]))
+        pos + 3 + n <= length(data) || error("LZ4 chunk at byte $pos extends past the end of the block")
+        chunk = @view data[(pos + 4):(pos + 3 + n)]
+        append!(out, decode(LZ4NumcodecsCodec(), chunk; max_size = data_size - length(out)))
+        pos += 4 + n
     end
+    return out
+end
+
+function encode_Lz4(input::AbstractVector{UInt8}; chunk_size::Integer = LZ4_CHUNK_SIZE)
+    out = UInt8[]
+    for start in 1:chunk_size:length(input)
+        chunk = @view input[start:min(start + chunk_size - 1, end)]
+        encoded = encode(LZ4NumcodecsEncodeOptions(; compressionLevel = 12), chunk)
+        append!(out, native2big_U32(length(encoded)), encoded)
+    end
+    return out
 end
 
 ################################################################################
@@ -1440,7 +1434,7 @@ long.asdf
    ├─ name::String | ASDF.jl
    ├─ author::String | Erik Schnetter <schnetter@gmail.com>
    ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
-   └─ version::String | 2.0.1
+   └─ version::String | 2.1.0
 ```
 """
 function info(io::IO, af::ASDFFile; max_rows = 20)
@@ -1558,7 +1552,7 @@ myfile.asdf
    ├─ name::String | ASDF.jl
    ├─ author::String | Erik Schnetter <schnetter@gmail.com>
    ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
-   └─ version::String | 2.0.1
+   └─ version::String | 2.1.0
 ```
 """
 function fileio_load(f::File{format"ASDF"}; kwargs...)
@@ -1597,7 +1591,6 @@ Parameter     | Default   | Description                                         
 | :---------- | :-------- | :------------------------------------------------------------------------ |
 `compression` | `C_Bzip2` | Applied compression scheme                                                |
 `inline`      | `false`   | Embed data in YAML instead of a binary block                              |
-`lz4_layout`  | `:block`  | `:block` for Python-compatible chunked LZ4, `:frame` for LZ4 frame format |
 
 !!! note
     If the compressed output is larger than the raw input, the block is stored uncompressed regardless of the chosen compression.
@@ -1606,10 +1599,9 @@ struct NDArrayWrapper
     array::AbstractArray
     compression::Compression
     inline::Bool
-    lz4_layout::Symbol
 end
-function NDArrayWrapper(array::AbstractArray; compression::Compression = C_Bzip2, inline::Bool = false, lz4_layout::Symbol = :block)
-    return NDArrayWrapper(array, compression, inline, lz4_layout)
+function NDArrayWrapper(array::AbstractArray; compression::Compression = C_Bzip2, inline::Bool = false)
+    return NDArrayWrapper(array, compression, inline)
 end
 Base.getindex(val::NDArrayWrapper) = val.array
 
@@ -1717,42 +1709,6 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int = 0, ignore_level::
     return YAML._print(io, ndarray, level, ignore_level)
 end
 
-function encode_Lz4_block(input::AbstractVector{UInt8}; chunk_size::Int = 1024 * 1024 * 8)
-    out = UInt8[]
-    offset = 1
-    while offset <= length(input)
-        chunk_end = min(offset + chunk_size - 1, length(input))
-        chunk = @view input[offset:chunk_end]
-
-        # Compress the raw chunk with LZ4 block codec
-        # LZ4BlockEncodeOptions does NOT prepend the uncompressed size,
-        # so we must prepend the LE uint32 ourselves to match Python's
-        # lz4.block.compress(store_size=True) behaviour.
-        compressed_payload = encode(LZ4BlockEncodeOptions(), chunk)
-        uncompressed_size = UInt32(length(chunk))
-        compressed_chunk_size = UInt32(4 + length(compressed_payload))  # LE prefix + raw payload
-
-        # Outer ASDF envelope: big-endian compressed chunk size (includes the 4-byte LE prefix)
-        append!(out, native2big_U32(compressed_chunk_size))
-
-        # Inner lz4.block store_size=True prefix: little-endian uncompressed size
-        append!(
-            out, [
-                (uncompressed_size >>> 0x00) & 0xff,
-                (uncompressed_size >>> 0x08) & 0xff,
-                (uncompressed_size >>> 0x10) & 0xff,
-                (uncompressed_size >>> 0x18) & 0xff,
-            ]
-        )
-
-        # Raw LZ4 block payload
-        append!(out, compressed_payload)
-        offset = chunk_end + 1
-    end
-
-    return out
-end
-
 """
     write_file(filename::AbstractString, document::AbstractDict)
 
@@ -1836,15 +1792,14 @@ function write_file(filename::AbstractString, document::AbstractDict)
             # TODO: Write directly to file
             if array.compression == C_None
                 data = input
-            elseif array.compression == C_Lz4 && array.lz4_layout == :block
-                data = encode_Lz4_block(input)
-                #data = encode(LZ4BlockEncodeOptions(), input) # Not compatible with Python asdf
+            elseif array.compression == C_Lz4
+                data = encode_Lz4(input)
             else
                 if array.compression == C_Blosc
                     encode_options = BloscEncodeOptions(; clevel = 9, doshuffle = 2, typesize = sizeof(eltype(array.array)), compressor = "zstd")
                 elseif array.compression == C_Bzip2
                     encode_options = BZ2EncodeOptions(; blockSize100k = 9)
-                elseif array.compression == C_Lz4 && array.lz4_layout == :frame
+                elseif array.compression == C_Lz4F
                     encode_options = LZ4FrameEncodeOptions(; compressionLevel = 12, blockSizeID = 7)
                 elseif array.compression == C_Xz
                     encode_options = XZEncodeOptions(; preset = UInt32(6))
