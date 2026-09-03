@@ -23,7 +23,7 @@ YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
 [compat]
 AbstractTrees = "0.4.5"
-ChunkCodecLibBlosc = "0.2.0, 0.3"
+ChunkCodecLibBlosc = "0.2.0, 0.3, 0.4"
 ChunkCodecLibBzip2 = "0.2.0, 1.0"
 ChunkCodecLibLz4 = "0.2.1, 1.0"
 ChunkCodecLibLzma = "1.0"
