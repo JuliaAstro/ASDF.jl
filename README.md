@@ -10,6 +10,11 @@
 
 A new [Advanced Scientific Data Format (ASDF)](https://asdf-standard.readthedocs.io/en/latest/index.html) package, written in Julia.
 
+Packages can extend `ASDF.to_tree` to embed their own Julia objects anywhere in
+a larger ASDF document alongside ordinary metadata and binary arrays. See the
+[custom type documentation](https://juliaastro.org/ASDF.jl/dev/custom-types/)
+for the write-conversion interface.
+
 ## Quickstart
 
 ```julia

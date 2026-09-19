@@ -20,6 +20,7 @@ makedocs(;
             "JWST" => "examples/jwst.md",
             "Roman" => "examples/roman.md",
         ],
+        "Custom Julia types" => "custom-types.md",
         "Interoperability" => "interop.md",
         "API" => "api.md",
     ],

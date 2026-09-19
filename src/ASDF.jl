@@ -1153,6 +1153,86 @@ function YAML._print(io::IO, val::TaggedScalar, level::Int = 0, ignore_level::Bo
     return YAML._print(io, val.value, level, ignore_level)
 end
 
+"""
+    WriteContext
+
+Opaque context for converting Julia objects to ASDF-compatible tree nodes.
+
+Packages that extend [`ASDF.to_tree`](@ref) should accept this context but must
+not depend on its fields. Future versions may use it for schema selection,
+array-storage policies, and extension provenance.
+"""
+struct WriteContext
+    _active::IdDict{Any, Nothing}
+end
+WriteContext() = WriteContext(IdDict{Any, Nothing}())
+
+"""
+    ASDF.to_tree(value)
+    ASDF.to_tree(value, context::ASDF.WriteContext)
+
+Convert Julia objects to an ASDF-compatible tree.
+
+The one-argument form recursively converts `value` and any custom objects
+nested in mappings, arrays, or tagged nodes. Packages add support for their own
+types by defining a two-argument method that returns a scalar, mapping,
+sequence, [`ASDF.TaggedMapping`](@ref), [`ASDF.TaggedSequence`](@ref),
+[`ASDF.TaggedScalar`](@ref), [`ASDF.NDArrayWrapper`](@ref), or another value
+already supported by the ASDF writer. Returned mappings and sequences may
+contain additional custom objects; ASDF converts those children recursively.
+
+The fallback two-argument method returns `value` unchanged.
+"""
+to_tree(value, ::WriteContext) = value
+to_tree(value) = _convert_tree(value, WriteContext())
+
+function _with_active(f, value, context::WriteContext)
+    haskey(context._active, value) && throw(ArgumentError("cyclic ASDF write conversion involving $(typeof(value)) is not supported"))
+    context._active[value] = nothing
+    try
+        return f()
+    finally
+        delete!(context._active, value)
+    end
+end
+
+function _convert_tree(value, context::WriteContext)
+    converted = to_tree(value, context)
+    converted === value && return _convert_tree_children(converted, context)
+    return _with_active(value, context) do
+        _convert_tree_children(converted, context)
+    end
+end
+
+_convert_tree_children(value, context::WriteContext) = value
+_convert_tree_children(value::TaggedScalar, context::WriteContext) = value
+
+function _convert_tree_children(value::TaggedMapping, context::WriteContext)
+    converted = _with_active(value.value, context) do
+        OrderedDict{Any, Any}(key => _convert_tree(item, context) for (key, item) in value)
+    end
+    return TaggedMapping(value.tag, converted)
+end
+
+function _convert_tree_children(value::TaggedSequence, context::WriteContext)
+    converted = _with_active(value.value, context) do
+        map(item -> _convert_tree(item, context), value.value)
+    end
+    return TaggedSequence(value.tag, converted)
+end
+
+function _convert_tree_children(value::AbstractDict, context::WriteContext)
+    return _with_active(value, context) do
+        OrderedDict{Any, Any}(key => _convert_tree(item, context) for (key, item) in value)
+    end
+end
+
+function _convert_tree_children(value::AbstractArray, context::WriteContext)
+    return _with_active(value, context) do
+        map(item -> _convert_tree(item, context), value)
+    end
+end
+
 function YAML._print(io::IO, val::NDArray, level::Int = 0, ignore_level::Bool = false)
     # TODO: Get compression from underlying header block?
     return YAML._print(io, NDArrayWrapper(val[]; compression = C_None), level, ignore_level)
@@ -1756,7 +1836,10 @@ end
 """
     write_file(filename::AbstractString, document::AbstractDict)
 
-Writes an ASDF file to disk. `document` is a plain `Dict` whose values may include [`NDArrayWrapper`](@ref) instances. These are serialized as binary blocks with appropriate compression.
+Writes an ASDF file to disk. `document` may contain custom Julia objects with
+two-argument [`ASDF.to_tree`](@ref) methods, including objects nested inside
+mappings or arrays. Values may also include [`NDArrayWrapper`](@ref) instances,
+which are serialized as binary blocks with appropriate compression.
 
 Layout of the output file:
 
@@ -1783,6 +1866,8 @@ function write_file(filename::AbstractString, document::AbstractDict)
     # back to an unordered `Dict` and drop the order). The provenance entry is stamped last.
     full_document = OrderedDict{Any, Any}(document)
     full_document["asdf_library"] = library
+    # Convert package-owned objects before float normalization and block collection.
+    full_document = to_tree(full_document)
     # Rewrite floats so their exponents are YAML-1.1 compliant (see `yaml_compliant`).
     full_document = yaml_compliant(full_document)
 

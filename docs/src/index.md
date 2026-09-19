@@ -125,4 +125,7 @@ af["data"][] == [1, 2, 3, 4]
 
 ## Tagged objects
 
-Come back soon to see how custom Julia objects can be handled in ASDF.jl.
+Packages can extend [`ASDF.to_tree`](@ref) to serialize their own Julia types
+wherever they occur in a larger ASDF document. See [Custom Julia
+types](@ref) for the conversion contract and an example combining a custom
+metadata object with a binary array.
