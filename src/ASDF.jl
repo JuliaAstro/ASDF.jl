@@ -1067,6 +1067,7 @@ but otherwise behave as plain mappings; and, when loading with `extensions = tru
 extension tags that would otherwise raise an error. Each behaves exactly like its wrapped `value`.
 A mapping indexes and iterates as a dict, a sequence as a vector, a scalar as a string, while
 retaining the original `tag` so the node round-trips unchanged through [`ASDF.write_file`](@ref).
+The `tag` field must contain the full tag URI; the writer emits namespace shorthand where applicable.
 """
 struct TaggedMapping{D <: AbstractDict} <: AbstractDict{Any, Any}
     tag::String
@@ -1154,83 +1155,65 @@ function YAML._print(io::IO, val::TaggedScalar, level::Int = 0, ignore_level::Bo
 end
 
 """
-    WriteContext
-
-Opaque context for converting Julia objects to ASDF-compatible tree nodes.
-
-Packages that extend [`ASDF.to_tree`](@ref) should accept this context but must
-not depend on its fields. Future versions may use it for schema selection,
-array-storage policies, and extension provenance.
-"""
-struct WriteContext
-    _active::IdDict{Any, Nothing}
-end
-WriteContext() = WriteContext(IdDict{Any, Nothing}())
-
-"""
     ASDF.to_tree(value)
-    ASDF.to_tree(value, context::ASDF.WriteContext)
 
-Convert Julia objects to an ASDF-compatible tree.
+Convert one package-owned value to an ASDF-compatible tree node.
 
-The one-argument form recursively converts `value` and any custom objects
-nested in mappings, arrays, or tagged nodes. Packages add support for their own
-types by defining a two-argument method that returns a scalar, mapping,
-sequence, [`ASDF.TaggedMapping`](@ref), [`ASDF.TaggedSequence`](@ref),
-[`ASDF.TaggedScalar`](@ref), [`ASDF.NDArrayWrapper`](@ref), or another value
-already supported by the ASDF writer. Returned mappings and sequences may
-contain additional custom objects; ASDF converts those children recursively.
-
-The fallback two-argument method returns `value` unchanged.
+Packages extend this shallow hook for their own types. A method must return a
+supported scalar, mapping, vector, [`ASDF.TaggedMapping`](@ref),
+[`ASDF.TaggedSequence`](@ref), [`ASDF.TaggedScalar`](@ref), or
+[`ASDF.NDArrayWrapper`](@ref). ASDF recursively converts values nested in the
+returned node while writing a file. The fallback returns `value` unchanged.
 """
-to_tree(value, ::WriteContext) = value
-to_tree(value) = _convert_tree(value, WriteContext())
+to_tree(value) = value
 
-function _with_active(f, value, context::WriteContext)
-    haskey(context._active, value) && throw(ArgumentError("cyclic ASDF write conversion involving $(typeof(value)) is not supported"))
-    context._active[value] = nothing
+function _convert_tree(value, active = Base.IdSet{Any}())
+    value in active && throw(ArgumentError("cyclic ASDF write conversion involving $(typeof(value)) is not supported"))
+    push!(active, value)
     try
-        return f()
+        converted = to_tree(value)
+        if converted === value
+            which(to_tree, (typeof(value),)) === which(to_tree, (Any,)) && return _convert_tree_children(value, active)
+            throw(ArgumentError("ASDF.to_tree(::$(typeof(value))) must return a supported ASDF tree node, not another $(typeof(value))"))
+        end
+        typeof(converted) === typeof(value) && throw(ArgumentError("ASDF.to_tree(::$(typeof(value))) must return a supported ASDF tree node, not another $(typeof(value))"))
+        return _convert_tree(converted, active)
     finally
-        delete!(context._active, value)
+        delete!(active, value)
     end
 end
 
-function _convert_tree(value, context::WriteContext)
-    converted = to_tree(value, context)
-    converted === value && return _convert_tree_children(converted, context)
-    return _with_active(value, context) do
-        _convert_tree_children(converted, context)
-    end
+_convert_tree_children(value::Nothing, active) = value
+_convert_tree_children(value::Union{Bool,Integer,AbstractString}, active) = value
+_convert_tree_children(value::AbstractFloat, active) = YAMLScalar(yaml_float_string(value))
+_convert_tree_children(value::NDArray, active) = value
+_convert_tree_children(value::TaggedScalar, active) = TaggedScalar(value.tag, _convert_tree(value.value, active))
+_convert_tree_children(value::NamedTuple, active) = OrderedDict{Any,Any}(String(key) => _convert_tree(item, active) for (key, item) in pairs(value))
+_convert_tree_children(value::Tuple, active) = [_convert_tree(item, active) for item in value]
+
+function _convert_tree_children(value::TaggedMapping, active)
+    return TaggedMapping(value.tag, _convert_tree_children(value.value, active))
 end
 
-_convert_tree_children(value, context::WriteContext) = value
-_convert_tree_children(value::TaggedScalar, context::WriteContext) = value
-
-function _convert_tree_children(value::TaggedMapping, context::WriteContext)
-    converted = _with_active(value.value, context) do
-        OrderedDict{Any, Any}(key => _convert_tree(item, context) for (key, item) in value)
-    end
-    return TaggedMapping(value.tag, converted)
+function _convert_tree_children(value::TaggedSequence, active)
+    return TaggedSequence(value.tag, _convert_tree_children(value.value, active))
 end
 
-function _convert_tree_children(value::TaggedSequence, context::WriteContext)
-    converted = _with_active(value.value, context) do
-        map(item -> _convert_tree(item, context), value.value)
+function _convert_tree_children(value::AbstractDict, active)
+    converted = OrderedDict{Any,Any}()
+    for (key, item) in value
+        key isa Union{Bool,Integer,AbstractString} || throw(ArgumentError("ASDF mapping key $(repr(key)) has unsupported type $(typeof(key)); keys must be booleans, integers, or strings"))
+        converted[key] = _convert_tree(item, active)
     end
-    return TaggedSequence(value.tag, converted)
+    return converted
 end
 
-function _convert_tree_children(value::AbstractDict, context::WriteContext)
-    return _with_active(value, context) do
-        OrderedDict{Any, Any}(key => _convert_tree(item, context) for (key, item) in value)
-    end
+_convert_tree_children(value::AbstractVector, active) = [_convert_tree(item, active) for item in value]
+function _convert_tree_children(value::AbstractArray, active)
+    throw(ArgumentError("ASDF metadata arrays must be vectors; wrap $(typeof(value)) in ASDF.NDArrayWrapper to write an N-dimensional array"))
 end
-
-function _convert_tree_children(value::AbstractArray, context::WriteContext)
-    return _with_active(value, context) do
-        map(item -> _convert_tree(item, context), value)
-    end
+function _convert_tree_children(value, active)
+    throw(ArgumentError("value of type $(typeof(value)) is not supported by the ASDF writer; define ASDF.to_tree(::$(typeof(value)))"))
 end
 
 function YAML._print(io::IO, val::NDArray, level::Int = 0, ignore_level::Bool = false)
@@ -1667,6 +1650,7 @@ function YAML._print(io::IO, val::ASDFLibrary, level::Int = 0, ignore_level::Boo
     library = OrderedDict(:name => val.name, :author => val.author, :homepage => val.homepage, :version => val.version)
     return YAML._print(io, library, level, ignore_level)
 end
+_convert_tree_children(value::ASDFLibrary, active) = value
 
 """
     NDArrayWrapper
@@ -1692,6 +1676,7 @@ function NDArrayWrapper(array::AbstractArray; compression::Compression = C_Bzip2
     return NDArrayWrapper(array, compression, inline, lz4_layout)
 end
 Base.getindex(val::NDArrayWrapper) = val.array
+_convert_tree_children(value::NDArrayWrapper, active) = value
 
 """
     Blocks
@@ -1837,9 +1822,9 @@ end
     write_file(filename::AbstractString, document::AbstractDict)
 
 Writes an ASDF file to disk. `document` may contain custom Julia objects with
-two-argument [`ASDF.to_tree`](@ref) methods, including objects nested inside
-mappings or arrays. Values may also include [`NDArrayWrapper`](@ref) instances,
-which are serialized as binary blocks with appropriate compression.
+[`ASDF.to_tree`](@ref) methods, including objects nested inside mappings or
+vectors. Values may also include [`NDArrayWrapper`](@ref) instances, which are
+serialized as binary blocks with appropriate compression.
 
 Layout of the output file:
 
@@ -1866,10 +1851,8 @@ function write_file(filename::AbstractString, document::AbstractDict)
     # back to an unordered `Dict` and drop the order). The provenance entry is stamped last.
     full_document = OrderedDict{Any, Any}(document)
     full_document["asdf_library"] = library
-    # Convert package-owned objects before float normalization and block collection.
-    full_document = to_tree(full_document)
-    # Rewrite floats so their exponents are YAML-1.1 compliant (see `yaml_compliant`).
-    full_document = yaml_compliant(full_document)
+    # Convert package-owned objects and normalize floats before block collection.
+    full_document = _convert_tree(full_document)
 
     # Write YAML part of file
     io = open(filename, "w")

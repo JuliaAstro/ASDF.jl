@@ -6,19 +6,20 @@ document by extending [`ASDF.to_tree`](@ref):
 
 ```@example custom_types
 using ASDF
+using OrderedCollections
 
 struct Measurement
     value::Float64
     unit::String
 end
 
-function ASDF.to_tree(measurement::Measurement, context::ASDF.WriteContext)
-    properties = Dict("value" => measurement.value, "unit" => measurement.unit)
+function ASDF.to_tree(measurement::Measurement)
+    properties = OrderedDict("value" => measurement.value, "unit" => measurement.unit)
     return ASDF.TaggedMapping("tag:example.org/measurement-1.0.0", properties)
 end
 
-document = Dict(
-    "meta" => Dict("exposure" => Measurement(1200.0, "s")),
+document = OrderedDict(
+    "meta" => OrderedDict("exposure" => Measurement(1200.0, "s")),
     "data" => ASDF.NDArrayWrapper(reshape(collect(1.0:12.0), 3, 4)),
 )
 
@@ -30,8 +31,8 @@ When they encounter a `Measurement`, Julia dispatch selects the method above.
 ASDF then recursively converts custom objects contained in the returned node
 before writing YAML and binary blocks.
 
-The original document is not modified. The same conversion can be inspected
-without writing a file:
+The original document is not modified. Calling the hook directly inspects its
+shallow representation:
 
 ```@example custom_types
 node = ASDF.to_tree(Measurement(5.0, "m"))
@@ -40,30 +41,26 @@ node.tag
 
 ## Conversion contract
 
-The public interface has two forms:
-
-```julia
-ASDF.to_tree(value)
-ASDF.to_tree(value, context::ASDF.WriteContext)
-```
-
-The one-argument form recursively converts a value and is useful for inspecting
-the ASDF representation. The two-argument form is the extension hook. Its
-fallback returns the value unchanged.
+Packages extend the one-argument `ASDF.to_tree(value)` hook. The fallback
+returns `value` unchanged.
 
 A package method should return one of:
 
-- a scalar, string, mapping, or array already supported by ASDF.jl;
+- `nothing`, a boolean, integer, float, or string;
+- a mapping with boolean, integer, or string keys, a vector, tuple, or named tuple;
 - [`ASDF.TaggedMapping`](@ref), [`ASDF.TaggedSequence`](@ref), or
   [`ASDF.TaggedScalar`](@ref);
 - [`ASDF.NDArrayWrapper`](@ref) for explicit inline or binary array storage.
 
 Converter methods are shallow. They may return mappings or sequences containing
-other custom objects; ASDF.jl converts those children automatically. Methods
-should accept the [`ASDF.WriteContext`](@ref) but treat it as opaque.
+other custom objects; the writer converts those children automatically and
+redispatches when a converter delegates to another custom type. Converters
+should not call `to_tree` recursively themselves.
 
-ASDF.jl rejects cyclic mappings, arrays, or converter output because ASDF
-reference serialization is not yet implemented.
+Unsupported leaves and mapping keys produce an error instead of being silently
+stringified. Multidimensional arrays must be wrapped in `NDArrayWrapper`;
+metadata sequences are vectors. ASDF.jl rejects cyclic mappings, sequences, or
+converter output because ASDF reference serialization is not yet implemented.
 
 ## Optional ASDF support
 
@@ -76,7 +73,7 @@ module MyPackageASDFExt
 using ASDF
 using MyPackage
 
-function ASDF.to_tree(value::MyPackage.CustomType, context::ASDF.WriteContext)
+function ASDF.to_tree(value::MyPackage.CustomType)
     return ASDF.TaggedMapping("tag:example.org/custom-1.0.0", Dict("value" => value.value))
 end
 
