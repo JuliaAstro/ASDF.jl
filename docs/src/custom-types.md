@@ -46,8 +46,9 @@ returns `value` unchanged.
 
 A package method should return one of:
 
-- `nothing`, a boolean, integer, float, or string;
-- a mapping with boolean, integer, or string keys, a vector, tuple, or named tuple;
+- `nothing`, a boolean, integer, float, string, symbol, `Date`, or `DateTime`;
+- a mapping with boolean, integer, string, or symbol keys, a vector, tuple, or
+  named tuple;
 - [`ASDF.TaggedMapping`](@ref), [`ASDF.TaggedSequence`](@ref), or
   [`ASDF.TaggedScalar`](@ref);
 - [`ASDF.NDArrayWrapper`](@ref) for explicit inline or binary array storage.
@@ -57,10 +58,11 @@ other custom objects; the writer converts those children automatically and
 redispatches when a converter delegates to another custom type. Converters
 should not call `to_tree` recursively themselves.
 
-Unsupported leaves and mapping keys produce an error instead of being silently
-stringified. Multidimensional arrays must be wrapped in `NDArrayWrapper`;
-metadata sequences are vectors. ASDF.jl rejects cyclic mappings, sequences, or
-converter output because ASDF reference serialization is not yet implemented.
+Symbols are written as strings. Unsupported leaves and mapping keys produce an
+error instead of being silently stringified. Multidimensional arrays must be
+wrapped in `NDArrayWrapper`; metadata sequences are vectors. ASDF.jl rejects
+cyclic mappings, sequences, or converter output because ASDF reference
+serialization is not yet implemented.
 
 ## Optional ASDF support
 

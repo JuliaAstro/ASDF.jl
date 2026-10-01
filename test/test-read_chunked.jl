@@ -13,4 +13,11 @@
         13 23 33 43
         14 24 34 44
     ]
+
+    # Chunked output is not implemented; a loaded chunked array is re-saved as one contiguous block.
+    mktempdir() do directory
+        filename = joinpath(directory, "chunking.asdf")
+        save(filename, asdf)
+        @test load(filename)["chunky"][] == chunky
+    end
 end
