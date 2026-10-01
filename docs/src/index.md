@@ -4,7 +4,7 @@ A new [Advanced Scientific Data Format (ASDF)](https://asdf-standard.readthedocs
 
 ## Introduction
 
-The ASDF file format is based on the human-readable [YAML](http://yaml.org/) standard, extended with efficient binary blocks to store array data. Basic arithmetic types (`Bool`, `Int`, `Float`, `Complex`) and `String` types are supported out of the box. Other types (structures) need to be declared to be supported.
+The ASDF file format is based on the human-readable [YAML](http://yaml.org/) standard, extended with efficient binary blocks to store array data. Basic arithmetic types (`Bool`, `Int`, `Float`) and `String` types are supported out of the box, as are arrays of real and complex numbers. Other types (structures) need to be declared to be supported.
 
 ASDF supports arbitrary array strides, both C (Python) and Fortran (Julia) memory layouts, as well as compression. The YAML metadata can contain arbitrary information corresponding to scalars, arrays, or dictionaries.
 
@@ -125,4 +125,7 @@ af["data"][] == [1, 2, 3, 4]
 
 ## Tagged objects
 
-Come back soon to see how custom Julia objects can be handled in ASDF.jl.
+Packages can extend [`ASDF.to_tree`](@ref) to serialize their own Julia types
+wherever they occur in a larger ASDF document. See [Custom Julia
+types](@ref) for the conversion contract and an example combining a custom
+metadata object with a binary array.

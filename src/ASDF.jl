@@ -13,6 +13,7 @@ using YAML: YAML
 using OrderedCollections: OrderedDict
 using FileIO: @format_str, File, load, save
 using AbstractTrees: AbstractTrees
+using Dates: Date, DateTime
 
 export load, save
 
@@ -1067,6 +1068,7 @@ but otherwise behave as plain mappings; and, when loading with `extensions = tru
 extension tags that would otherwise raise an error. Each behaves exactly like its wrapped `value`.
 A mapping indexes and iterates as a dict, a sequence as a vector, a scalar as a string, while
 retaining the original `tag` so the node round-trips unchanged through [`ASDF.write_file`](@ref).
+The `tag` field must contain the full tag URI; the writer emits namespace shorthand where applicable.
 """
 struct TaggedMapping{D <: AbstractDict} <: AbstractDict{Any, Any}
     tag::String
@@ -1153,6 +1155,66 @@ function YAML._print(io::IO, val::TaggedScalar, level::Int = 0, ignore_level::Bo
     return YAML._print(io, val.value, level, ignore_level)
 end
 
+"""
+    ASDF.to_tree(value)
+
+Convert one package-owned value to an ASDF-compatible tree node.
+
+Packages extend this shallow hook for their own types. A method must return a
+supported scalar, mapping, vector, [`ASDF.TaggedMapping`](@ref),
+[`ASDF.TaggedSequence`](@ref), [`ASDF.TaggedScalar`](@ref), or
+[`ASDF.NDArrayWrapper`](@ref). ASDF recursively converts values nested in the
+returned node while writing a file. The fallback returns `value` unchanged.
+"""
+to_tree(value) = value
+
+function _convert_tree(value, active = Base.IdSet{Any}())
+    # Plain scalars have neither hooks nor children, so they skip the cycle guard.
+    value isa Union{Nothing, Bool, Int, Float64, String} && return _convert_tree_children(value, active)
+    value in active && throw(ArgumentError("cyclic ASDF write conversion involving $(typeof(value)) is not supported"))
+    length(active) < 1000 || throw(ArgumentError("ASDF write conversion is nested more than 1000 levels deep at $(typeof(value)); check for an ASDF.to_tree method that never returns a supported node"))
+    push!(active, value)
+    try
+        converted = to_tree(value)
+        return converted === value ? _convert_tree_children(value, active) : _convert_tree(converted, active)
+    finally
+        delete!(active, value)
+    end
+end
+
+_convert_tree_children(value::Union{Nothing, Integer, AbstractString, Date, DateTime}, active) = value
+_convert_tree_children(value::AbstractFloat, active) = YAMLScalar(yaml_float_string(value))
+_convert_tree_children(value::Symbol, active) = String(value)
+_convert_tree_children(value::NDArray, active) = value
+_convert_tree_children(value::NamedTuple, active) = OrderedDict{Any, Any}(String(key) => _convert_tree(item, active) for (key, item) in pairs(value))
+_convert_tree_children(value::Tuple, active) = [_convert_tree(item, active) for item in value]
+
+function _convert_tree_children(value::TaggedMapping, active)
+    return TaggedMapping(value.tag, _convert_tree_children(value.value, active))
+end
+
+function _convert_tree_children(value::TaggedSequence, active)
+    return TaggedSequence(value.tag, _convert_tree_children(value.value, active))
+end
+
+function _convert_tree_children(value::AbstractDict, active)
+    converted = OrderedDict{Any, Any}()
+    for (key, item) in value
+        key isa Symbol && (key = String(key))
+        key isa Union{Integer, AbstractString} || throw(ArgumentError("ASDF mapping key $(repr(key)) has unsupported type $(typeof(key)); keys must be booleans, integers, strings, or symbols"))
+        converted[key] = _convert_tree(item, active)
+    end
+    return converted
+end
+
+_convert_tree_children(value::AbstractVector, active) = [_convert_tree(item, active) for item in value]
+function _convert_tree_children(value::AbstractArray, active)
+    throw(ArgumentError("ASDF metadata arrays must be vectors; wrap $(typeof(value)) in ASDF.NDArrayWrapper to write an N-dimensional array"))
+end
+function _convert_tree_children(value, active)
+    throw(ArgumentError("value of type $(typeof(value)) is not supported by the ASDF writer; convert it to a supported value or, for a type you own, define ASDF.to_tree(::$(typeof(value)))"))
+end
+
 function YAML._print(io::IO, val::NDArray, level::Int = 0, ignore_level::Bool = false)
     # TODO: Get compression from underlying header block?
     return YAML._print(io, NDArrayWrapper(val[]; compression = C_None), level, ignore_level)
@@ -1178,11 +1240,9 @@ struct YAMLScalar
 end
 YAML._print(io::IO, val::YAMLScalar, level::Int = 0, ignore_level::Bool = false) = println(io, val.text)
 
-# Pre-write pass: recursively rewrite a document so every float is emitted in YAML-1.1-compliant form.
+# Rewrite inline ndarray data so every float is emitted in YAML-1.1-compliant form. Document
+# metadata gets the same treatment from `_convert_tree`.
 yaml_compliant(val::AbstractFloat) = YAMLScalar(yaml_float_string(val))
-yaml_compliant(val::TaggedMapping) = TaggedMapping(val.tag, yaml_compliant(val.value))
-yaml_compliant(val::TaggedSequence) = TaggedSequence(val.tag, yaml_compliant(val.value))
-yaml_compliant(val::AbstractDict) = OrderedDict{Any, Any}(k => yaml_compliant(v) for (k, v) in val)
 yaml_compliant(val::AbstractArray) = map(yaml_compliant, val)
 yaml_compliant(val) = val
 
@@ -1308,6 +1368,10 @@ function Base.getindex(chunked_ndarray::ChunkedNDArray)
     end
     return data::AbstractArray
 end
+
+# Chunked output is not implemented, so a loaded chunked array is written back as one contiguous
+# block, the same way `YAML._print(::NDArray)` writes a loaded plain array.
+_convert_tree_children(value::ChunkedNDArray, active) = NDArrayWrapper(value[]; compression = C_None)
 
 ################################################################################
 
@@ -1587,6 +1651,7 @@ function YAML._print(io::IO, val::ASDFLibrary, level::Int = 0, ignore_level::Boo
     library = OrderedDict(:name => val.name, :author => val.author, :homepage => val.homepage, :version => val.version)
     return YAML._print(io, library, level, ignore_level)
 end
+_convert_tree_children(value::ASDFLibrary, active) = value
 
 """
     NDArrayWrapper
@@ -1612,6 +1677,7 @@ function NDArrayWrapper(array::AbstractArray; compression::Compression = C_Bzip2
     return NDArrayWrapper(array, compression, inline, lz4_layout)
 end
 Base.getindex(val::NDArrayWrapper) = val.array
+_convert_tree_children(value::NDArrayWrapper, active) = value
 
 """
     Blocks
@@ -1756,7 +1822,10 @@ end
 """
     write_file(filename::AbstractString, document::AbstractDict)
 
-Writes an ASDF file to disk. `document` is a plain `Dict` whose values may include [`NDArrayWrapper`](@ref) instances. These are serialized as binary blocks with appropriate compression.
+Writes an ASDF file to disk. `document` may contain custom Julia objects with
+[`ASDF.to_tree`](@ref) methods, including objects nested inside mappings or
+vectors. Values may also include [`NDArrayWrapper`](@ref) instances, which are
+serialized as binary blocks with appropriate compression.
 
 Layout of the output file:
 
@@ -1783,8 +1852,8 @@ function write_file(filename::AbstractString, document::AbstractDict)
     # back to an unordered `Dict` and drop the order). The provenance entry is stamped last.
     full_document = OrderedDict{Any, Any}(document)
     full_document["asdf_library"] = library
-    # Rewrite floats so their exponents are YAML-1.1 compliant (see `yaml_compliant`).
-    full_document = yaml_compliant(full_document)
+    # Convert package-owned objects and normalize floats before block collection.
+    full_document = _convert_tree(full_document)
 
     # Write YAML part of file
     io = open(filename, "w")
