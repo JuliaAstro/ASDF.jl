@@ -1202,6 +1202,8 @@ function _convert_tree_children(value::AbstractDict, active)
     for (key, item) in value
         key isa Symbol && (key = String(key))
         key isa Union{Integer, AbstractString} || throw(ArgumentError("ASDF mapping key $(repr(key)) has unsupported type $(typeof(key)); keys must be booleans, integers, strings, or symbols"))
+        # `:a` and `"a"` are distinct Julia keys but the same YAML key.
+        haskey(converted, key) && throw(ArgumentError("ASDF mapping key $(repr(key)) occurs more than once after key normalization"))
         converted[key] = _convert_tree(item, active)
     end
     return converted

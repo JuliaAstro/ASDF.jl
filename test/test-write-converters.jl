@@ -54,6 +54,8 @@ ASDF.to_tree(value::WriteMapping) = ASDF.TaggedMapping("tag:example.org/write/ma
 
     # Symbols are written as strings, both as keys and as values.
     @test ASDF._convert_tree(OrderedDict(:unit => :s)) == OrderedDict("unit" => "s")
+    # Keys that collide after normalization must not silently drop a value.
+    @test_throws "occurs more than once" ASDF._convert_tree(OrderedDict{Any, Any}(:a => 1, "a" => 2))
 
     cyclic_mapping = OrderedDict{Any, Any}()
     cyclic_mapping["self"] = cyclic_mapping
