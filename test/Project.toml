@@ -10,6 +10,7 @@ YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
 [compat]
 Aqua = "0.8.16"
+Dates = "1.10"
 Documenter = "1"
 OrderedCollections = "1.8.1, 2"
 ParallelTestRunner = "2.6.2"
