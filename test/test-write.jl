@@ -162,3 +162,25 @@ end
     end
     @test file["cube"].shape == [4, 3, 2]
 end
+
+@testset "write 0-dimensional arrays" begin
+    # The shape of a 0-dimensional array is empty, which `collect(reverse(size(array)))` gave as a `Vector{Any}`.
+    path = joinpath(mktempdir(; cleanup = true), "zero_dimensional.asdf")
+    arrays = Dict{Any, Any}(
+        "none" => (fill(1.5), ASDF.C_None),
+        "zlib" => (fill(Int16(-7)), ASDF.C_Zlib),
+        "bzp2" => (fill(true), ASDF.C_Bzip2),
+        "lz4" => (fill(2.5f0), ASDF.C_Lz4),
+    )
+    ASDF.write_file(path, Dict{Any, Any}(key => ASDF.NDArrayWrapper(array; compression) for (key, (array, compression)) in arrays))
+    @test occursin("shape: []", read(path, String))
+    file = ASDF.load_file(path)
+    for (key, (array, _)) in arrays
+        array′ = file[key][]
+        @test size(array′) == ()
+        @test eltype(array′) == eltype(array)
+        @test array′[] == array[]
+    end
+    # The ndarray schema requires inline data to be a list, so a 0-dimensional array has no inline form.
+    @test_throws ArgumentError("a 0-dimensional array cannot be stored inline; use `inline = false`") ASDF.write_file(path, Dict{Any, Any}("a" => ASDF.NDArrayWrapper(fill(1.5); inline = true)))
+end

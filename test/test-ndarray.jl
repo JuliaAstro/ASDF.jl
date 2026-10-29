@@ -262,3 +262,26 @@ end
     @test eltype(cube) == Int16
     @test size(file["empty"][]) == (3, 0)
 end
+
+@testset "0-dimensional arrays" begin
+    # `data/zero_dimensional.asdf` was written by Python `asdf` 5.3.1:
+    # asdf.AsdfFile({"float64": np.array(1.5), "int16_big": np.array(-7, dtype=">i2"), "bool": np.array(True)}).write_to(...)
+    # YAML reads its `shape: []` as a `Vector{Any}`, and a 0-dimensional array has no strides.
+    file = load(joinpath("data", "zero_dimensional.asdf"))
+    for (key, value) in (("float64", 1.5), ("int16_big", Int16(-7)), ("bool", true))
+        @test file[key].shape == Int64[]
+        @test file[key].strides == Int64[]
+        array = file[key][]
+        @test size(array) == ()
+        @test eltype(array) == typeof(value)
+        @test array[] == value
+    end
+    # A file read from Python can be written back out.
+    path = joinpath(mktempdir(; cleanup = true), "rewritten.asdf")
+    ASDF.write_file(path, Dict{Any, Any}(key => file[key] for key in ("float64", "int16_big", "bool")))
+    rewritten = load(path)
+    for key in ("float64", "int16_big", "bool")
+        @test rewritten[key][] == file[key][]
+        @test eltype(rewritten[key][]) == eltype(file[key][])
+    end
+end
