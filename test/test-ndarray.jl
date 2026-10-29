@@ -206,3 +206,82 @@ end
         ASDF.ChunkedNDArray(Int64[6], ASDF.Datatype_int8, [chunk])
     end
 end
+
+@testset "inline data of any dimension" begin
+    # Inline `data` nests one list per dimension with the first `shape` dimension outermost, as
+    # Python `asdf` writes it; the result has size `reverse(shape)`. `stack` used to reject empty
+    # data and could not build arrays of more than two dimensions.
+    inline(data, shape) = ASDF.NDArray(ASDF.LazyBlockHeaders(), nothing, data, shape, "float64", nothing, nothing, nothing)[]
+    @test inline([1.5, 2.5], [2]) == [1.5, 2.5]
+    @test inline([[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]], [2, 3]) == [0.0 3.0; 1.0 4.0; 2.0 5.0]
+    nested = [[[12.0 * i + 4.0 * j + k for k in 0:3] for j in 0:2] for i in 0:1]
+    array = inline(nested, [2, 3, 4])
+    @test array == reshape(collect(0.0:23.0), 4, 3, 2)
+    @test eltype(array) == Float64
+    for (data, shape) in (([], [0]), ([], [0, 3]), ([[], [], []], [3, 0]))
+        empty = inline(data, shape)
+        @test size(empty) == Tuple(reverse(shape))
+        @test eltype(empty) == Float64
+    end
+    # Python `asdf` rejects data that does not match `shape`, including data nested too shallowly
+    # whose element count matches.
+    for (data, shape) in (([[1.0, 2.0], [3.0, 4.0]], [2, 2, 1]), ([[1.0, 2.0], [3.0]], [2, 2]), ([[1.0, 2.0], [3.0, 4.0]], [2, 3]), ([1.0, 2.0], [3]))
+        @test_throws ArgumentError("`shape` does not correctly describe the shape of `data`.") inline(data, shape)
+    end
+end
+
+@testset "read inline arrays of any dimension" begin
+    # The layout Python `asdf` writes for `set_array_storage(array, "inline")`.
+    path = joinpath(mktempdir(; cleanup = true), "inline.asdf")
+    text = """
+    #ASDF 1.0.0
+    #ASDF_STANDARD 1.6.0
+    %YAML 1.1
+    %TAG ! tag:stsci.edu:asdf/
+    --- !core/asdf-1.1.0
+    cube: !core/ndarray-1.1.0
+      data:
+      - - [0, 1, 2, 3]
+        - [4, 5, 6, 7]
+        - [8, 9, 10, 11]
+      - - [12, 13, 14, 15]
+        - [16, 17, 18, 19]
+        - [20, 21, 22, 23]
+      datatype: int16
+      shape: [2, 3, 4]
+    empty: !core/ndarray-1.1.0
+      data: []
+      datatype: float64
+      shape: [0, 3]
+    ...
+    """
+    write(path, text)
+    file = ASDF.load_file(path)
+    cube = file["cube"][]
+    @test cube == reshape(Int16.(0:23), 4, 3, 2)
+    @test eltype(cube) == Int16
+    @test size(file["empty"][]) == (3, 0)
+end
+
+@testset "0-dimensional arrays" begin
+    # `data/zero_dimensional.asdf` was written by Python `asdf` 5.3.1:
+    # asdf.AsdfFile({"float64": np.array(1.5), "int16_big": np.array(-7, dtype=">i2"), "bool": np.array(True)}).write_to(...)
+    # YAML reads its `shape: []` as a `Vector{Any}`, and a 0-dimensional array has no strides.
+    file = load(joinpath("data", "zero_dimensional.asdf"))
+    for (key, value) in (("float64", 1.5), ("int16_big", Int16(-7)), ("bool", true))
+        @test file[key].shape == Int64[]
+        @test file[key].strides == Int64[]
+        array = file[key][]
+        @test size(array) == ()
+        @test eltype(array) == typeof(value)
+        @test array[] == value
+    end
+    # A file read from Python can be written back out.
+    path = joinpath(mktempdir(; cleanup = true), "rewritten.asdf")
+    ASDF.write_file(path, Dict{Any, Any}(key => file[key] for key in ("float64", "int16_big", "bool")))
+    rewritten = load(path)
+    for key in ("float64", "int16_big", "bool")
+        @test rewritten[key][] == file[key][]
+        @test eltype(rewritten[key][]) == eltype(file[key][])
+    end
+end

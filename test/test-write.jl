@@ -134,3 +134,53 @@ end
     # User keys keep their insertion order; the auto-inserted provenance entry comes last.
     @test collect(keys(reloaded.metadata)) == ["zebra", "apple", "mango", "asdf_library"]
 end
+
+@testset "write inline arrays of any dimension" begin
+    # Inline `data` must nest one list per dimension. Splitting with `eachslice` gave the right
+    # nesting only for matrices: vectors and empty arrays were written as `fill(...)` and arrays of
+    # more than two dimensions as a matrix of vectors, neither valid YAML ndarray data.
+    path = joinpath(mktempdir(; cleanup = true), "inline.asdf")
+    arrays = Dict{Any, Any}(
+        "vector" => [1.5, 2.5],
+        "matrix" => Int16[1 2 3; 4 5 6],
+        "cube" => reshape(collect(1.0:24.0), 2, 3, 4),
+        "bool" => [true, false, true],
+        "empty" => Float64[],
+        "empty_rows" => zeros(Float32, 0, 3),
+        "empty_columns" => zeros(Float32, 3, 0),
+    )
+    ASDF.write_file(path, Dict{Any, Any}(key => ASDF.NDArrayWrapper(array; inline = true) for (key, array) in arrays))
+    text = read(path, String)
+    @test !occursin("fill(", text)
+    @test !occursin("YAMLScalar", text)
+    file = ASDF.load_file(path)
+    for (key, array) in arrays
+        array′ = file[key][]
+        @test eltype(array′) == eltype(array)
+        @test size(array′) == size(array)
+        @test array′ == array
+    end
+    @test file["cube"].shape == [4, 3, 2]
+end
+
+@testset "write 0-dimensional arrays" begin
+    # The shape of a 0-dimensional array is empty, which `collect(reverse(size(array)))` gave as a `Vector{Any}`.
+    path = joinpath(mktempdir(; cleanup = true), "zero_dimensional.asdf")
+    arrays = Dict{Any, Any}(
+        "none" => (fill(1.5), ASDF.C_None),
+        "zlib" => (fill(Int16(-7)), ASDF.C_Zlib),
+        "bzp2" => (fill(true), ASDF.C_Bzip2),
+        "lz4" => (fill(2.5f0), ASDF.C_Lz4),
+    )
+    ASDF.write_file(path, Dict{Any, Any}(key => ASDF.NDArrayWrapper(array; compression) for (key, (array, compression)) in arrays))
+    @test occursin("shape: []", read(path, String))
+    file = ASDF.load_file(path)
+    for (key, (array, _)) in arrays
+        array′ = file[key][]
+        @test size(array′) == ()
+        @test eltype(array′) == eltype(array)
+        @test array′[] == array[]
+    end
+    # The ndarray schema requires inline data to be a list, so a 0-dimensional array has no inline form.
+    @test_throws ArgumentError("a 0-dimensional array cannot be stored inline; use `inline = false`") ASDF.write_file(path, Dict{Any, Any}("a" => ASDF.NDArrayWrapper(fill(1.5); inline = true)))
+end

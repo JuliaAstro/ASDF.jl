@@ -772,9 +772,17 @@ function NDArray(
         datatype = parse_asdf_datatype(datatype)
     end
     if data !== nothing
-        # Convert arrays of arrays into multi-dimensional arrays
-        data = stack(data)
-        data = reshape(data, Tuple(reverse(shape)))
+        # Convert arrays of arrays into multi-dimensional arrays. The data nests one list per dimension with
+        # the first `shape` (last Julia) dimension outermost, so its elements in order are column-major for
+        # `reverse(shape)`. Unlike `stack`, flattening also handles empty and higher-dimensional data. Each
+        # level must have the length `shape` gives; flattening alone would accept data nested too shallowly.
+        elements = Any[data]
+        for n in shape
+            all(item -> item isa AbstractVector && length(item) == n, elements) ||
+                throw(ArgumentError("`shape` does not correctly describe the shape of `data`."))
+            elements = Iterators.flatten(elements)
+        end
+        data = reshape(collect(elements), Tuple(reverse(shape)))
         # Correct element type
         data = Array{Type(datatype)}(data)
     end
@@ -796,8 +804,9 @@ function NDArray(
         # check below even though no data is ever read from a zero-size array. Negative
         # entries are left unclamped so the shape negativity check below still reports them with its own clear error message. STScI Roman L2 `.asdf` products contain such
         # zero-shape arrays (e.g. `chisq`, `dumo`) with no explicit `strides` key.
+        # A 0-dimensional array has no strides, as in NumPy.
         sz = sizeof(Type(datatype))
-        strides = reverse(cumprod([sz; reverse(max.(shape[(begin + 1):end], 1))]))
+        strides = isempty(shape) ? Int64[] : reverse(cumprod([sz; reverse(max.(shape[(begin + 1):end], 1))]))
     end
     return NDArray(
         lazy_block_headers, source, data, Vector{Int64}(shape), datatype, byteorder, Int64(offset), Vector{Int64}(strides)
@@ -812,7 +821,9 @@ function make_construct_yaml_ndarray(block_headers::LazyBlockHeaders)
         mapping = YAML.construct_mapping(constructor, node)
         source = get(mapping, "source", nothing)::Union{Nothing, Integer}
         data = get(mapping, "data", nothing)::Union{Nothing, AbstractVector}
-        shape = mapping["shape"]::AbstractVector{<:Integer}
+        shape = mapping["shape"]::AbstractVector
+        # YAML reads the shape `[]` of a 0-dimensional array as a `Vector{Any}`.
+        shape = isempty(shape) ? Int64[] : shape::AbstractVector{<:Integer}
         datatype = mapping["datatype"] # No annotation needed, `parse_asdf_datatype` handles dispatch
         byteorder = get(mapping, "byteorder", nothing)::Union{Nothing, AbstractString}
         offset = get(mapping, "offset", nothing)::Union{Nothing, Integer}
@@ -1247,6 +1258,10 @@ YAML._print(io::IO, val::YAMLScalar, level::Int = 0, ignore_level::Bool = false)
 yaml_compliant(val::AbstractFloat) = YAMLScalar(yaml_float_string(val))
 yaml_compliant(val::AbstractArray) = map(yaml_compliant, val)
 yaml_compliant(val) = val
+
+# Inline ndarray data nests one list per dimension, the first `shape` (last Julia) dimension outermost.
+nest_inline_data(array::AbstractVector) = collect(array)
+nest_inline_data(array::AbstractArray) = [nest_inline_data(slice) for slice in eachslice(array; dims = ndims(array))]
 
 ################################################################################
 
@@ -1751,13 +1766,14 @@ infer_asdf_datatype(::Type{AsciiString{N}}) where {N} = AsciiDatatype(N)
 function YAML._print(io::IO, val::NDArrayWrapper, level::Int = 0, ignore_level::Bool = false)
     datatype = infer_asdf_datatype(eltype(val.array))
     if val.inline
-        data = val.array
+        # The ndarray schema requires inline `data` to be a list, and Python `asdf` also refuses.
+        ndims(val.array) == 0 && throw(ArgumentError("a 0-dimensional array cannot be stored inline; use `inline = false`"))
         # Split multidimensional arrays into array-of-arrays
-        data = eachslice(data; dims = Tuple(2:ndims(data)))
+        data = nest_inline_data(val.array)
         ndarray = OrderedDict(
             # Route inline data through the float pass so its elements get YAML-1.1 exponents too.
             :data => yaml_compliant(data),
-            :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
+            :shape => collect(Int64, reverse(size(val.array))),
             :datatype => asdf_datatype_yaml(datatype), #string(Datatype(eltype(val.array))),
             # :offset => 0::Integer,
             # :strides => ::Vector{Int64},
@@ -1769,7 +1785,8 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int = 0, ignore_level::
         push!(blocks.arrays, val)
         ndarray = OrderedDict(
             :source => source::Integer,
-            :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
+            # `collect(Int64, ...)` keeps the empty shape of a 0-dimensional array an integer vector.
+            :shape => collect(Int64, reverse(size(val.array))),
             :datatype => asdf_datatype_yaml(datatype),
             :byteorder => string(host_byteorder::Byteorder),
             # :offset => 0::Integer,

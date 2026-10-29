@@ -75,7 +75,7 @@ save("intro_modified.asdf", af)
 
 ## Array storage
 
-By default, array data is written inline as a literal to the ASDF file. This can be stored and later accessed more efficiently by wrapping your data in an [`ASDF.NDArrayWrapper`](@ref). This allows for your data to be stored as a binary via the `inline = false` keyword (default), which can be further optimized by specifying a supported [compression algorithm](@ref ASDF.Compression) to use via the `compression` keyword:
+A vector is written inline as a YAML list. Wrapping an array of any number of dimensions in an [`ASDF.NDArrayWrapper`](@ref) writes it as an ASDF ndarray, which records its datatype and shape; multidimensional arrays must be wrapped. A wrapped array is stored as a binary block via the `inline = false` keyword (default), which can be further optimized by specifying a supported [compression algorithm](@ref ASDF.Compression) to use via the `compression` keyword:
 
 ```@example intro
 af_payload = OrderedDict("meta" => OrderedDict("my" => OrderedDict("nested" => "metadata")), "data" => ASDF.NDArrayWrapper([1, 2, 3, 4]; compression = ASDF.C_Bzip2))
