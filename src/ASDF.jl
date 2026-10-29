@@ -772,9 +772,17 @@ function NDArray(
         datatype = parse_asdf_datatype(datatype)
     end
     if data !== nothing
-        # Convert arrays of arrays into multi-dimensional arrays
-        data = stack(data)
-        data = reshape(data, Tuple(reverse(shape)))
+        # Convert arrays of arrays into multi-dimensional arrays. The data nests one list per dimension with
+        # the first `shape` (last Julia) dimension outermost, so its elements in order are column-major for
+        # `reverse(shape)`. Unlike `stack`, flattening also handles empty and higher-dimensional data. Each
+        # level must have the length `shape` gives; flattening alone would accept data nested too shallowly.
+        elements = Any[data]
+        for n in shape
+            all(item -> item isa AbstractVector && length(item) == n, elements) ||
+                throw(ArgumentError("`shape` does not correctly describe the shape of `data`."))
+            elements = Iterators.flatten(elements)
+        end
+        data = reshape(collect(elements), Tuple(reverse(shape)))
         # Correct element type
         data = Array{Type(datatype)}(data)
     end
@@ -1247,6 +1255,10 @@ YAML._print(io::IO, val::YAMLScalar, level::Int = 0, ignore_level::Bool = false)
 yaml_compliant(val::AbstractFloat) = YAMLScalar(yaml_float_string(val))
 yaml_compliant(val::AbstractArray) = map(yaml_compliant, val)
 yaml_compliant(val) = val
+
+# Inline ndarray data nests one list per dimension, the first `shape` (last Julia) dimension outermost.
+nest_inline_data(array::AbstractVector) = collect(array)
+nest_inline_data(array::AbstractArray) = [nest_inline_data(slice) for slice in eachslice(array; dims = ndims(array))]
 
 ################################################################################
 
@@ -1751,9 +1763,8 @@ infer_asdf_datatype(::Type{AsciiString{N}}) where {N} = AsciiDatatype(N)
 function YAML._print(io::IO, val::NDArrayWrapper, level::Int = 0, ignore_level::Bool = false)
     datatype = infer_asdf_datatype(eltype(val.array))
     if val.inline
-        data = val.array
         # Split multidimensional arrays into array-of-arrays
-        data = eachslice(data; dims = Tuple(2:ndims(data)))
+        data = nest_inline_data(val.array)
         ndarray = OrderedDict(
             # Route inline data through the float pass so its elements get YAML-1.1 exponents too.
             :data => yaml_compliant(data),

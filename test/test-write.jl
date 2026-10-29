@@ -134,3 +134,31 @@ end
     # User keys keep their insertion order; the auto-inserted provenance entry comes last.
     @test collect(keys(reloaded.metadata)) == ["zebra", "apple", "mango", "asdf_library"]
 end
+
+@testset "write inline arrays of any dimension" begin
+    # Inline `data` must nest one list per dimension. Splitting with `eachslice` gave the right
+    # nesting only for matrices: vectors and empty arrays were written as `fill(...)` and arrays of
+    # more than two dimensions as a matrix of vectors, neither valid YAML ndarray data.
+    path = joinpath(mktempdir(; cleanup = true), "inline.asdf")
+    arrays = Dict{Any, Any}(
+        "vector" => [1.5, 2.5],
+        "matrix" => Int16[1 2 3; 4 5 6],
+        "cube" => reshape(collect(1.0:24.0), 2, 3, 4),
+        "bool" => [true, false, true],
+        "empty" => Float64[],
+        "empty_rows" => zeros(Float32, 0, 3),
+        "empty_columns" => zeros(Float32, 3, 0),
+    )
+    ASDF.write_file(path, Dict{Any, Any}(key => ASDF.NDArrayWrapper(array; inline = true) for (key, array) in arrays))
+    text = read(path, String)
+    @test !occursin("fill(", text)
+    @test !occursin("YAMLScalar", text)
+    file = ASDF.load_file(path)
+    for (key, array) in arrays
+        array′ = file[key][]
+        @test eltype(array′) == eltype(array)
+        @test size(array′) == size(array)
+        @test array′ == array
+    end
+    @test file["cube"].shape == [4, 3, 2]
+end
