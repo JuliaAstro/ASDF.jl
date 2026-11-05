@@ -223,9 +223,14 @@ end
         @test size(empty) == Tuple(reverse(shape))
         @test eltype(empty) == Float64
     end
+    # Julia arrays of other dimensions, such as the data of a loaded inline ndarray, are already in Julia order.
+    @test inline([0.0 1.0; 2.0 3.0], [2, 2]) == [0.0 1.0; 2.0 3.0]
     # Python `asdf` rejects data that does not match `shape`, including data nested too shallowly
-    # whose element count matches.
-    for (data, shape) in (([[1.0, 2.0], [3.0, 4.0]], [2, 2, 1]), ([[1.0, 2.0], [3.0]], [2, 2]), ([[1.0, 2.0], [3.0, 4.0]], [2, 3]), ([1.0, 2.0], [3]))
+    # whose element count matches, or nested too deeply.
+    for (data, shape) in (
+            ([[1.0, 2.0], [3.0, 4.0]], [2, 2, 1]), ([[1.0, 2.0], [3.0]], [2, 2]), ([[1.0, 2.0], [3.0, 4.0]], [2, 3]), ([1.0, 2.0], [3]),
+            ([[1.0], [2.0]], [2]), ([1.5], Int64[]), (zeros(2, 3), [2, 3]),
+        )
         @test_throws ArgumentError("`shape` does not correctly describe the shape of `data`.") inline(data, shape)
     end
 end

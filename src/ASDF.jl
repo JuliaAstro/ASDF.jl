@@ -771,18 +771,22 @@ function NDArray(
     if datatype isa AbstractString || datatype isa AbstractVector
         datatype = parse_asdf_datatype(datatype)
     end
-    if data !== nothing
+    if data isa AbstractVector
         # Convert arrays of arrays into multi-dimensional arrays. The data nests one list per dimension with
         # the first `shape` (last Julia) dimension outermost, so its elements in order are column-major for
         # `reverse(shape)`. Unlike `stack`, flattening also handles empty and higher-dimensional data. Each
-        # level must have the length `shape` gives; flattening alone would accept data nested too shallowly.
+        # level must have the length `shape` gives and the leaves must be scalars; flattening alone would
+        # accept data nested too shallowly or too deeply. Other arrays are already in Julia order.
+        shape_error = ArgumentError("`shape` does not correctly describe the shape of `data`.")
         elements = Any[data]
         for n in shape
-            all(item -> item isa AbstractVector && length(item) == n, elements) ||
-                throw(ArgumentError("`shape` does not correctly describe the shape of `data`."))
-            elements = Iterators.flatten(elements)
+            all(item -> item isa AbstractVector && length(item) == n, elements) || throw(shape_error)
+            elements = collect(Iterators.flatten(elements))
         end
-        data = reshape(collect(elements), Tuple(reverse(shape)))
+        any(item -> item isa AbstractVector, elements) && throw(shape_error)
+        data = reshape(elements, Tuple(reverse(shape)))
+    end
+    if data !== nothing
         # Correct element type
         data = Array{Type(datatype)}(data)
     end
@@ -804,14 +808,16 @@ function NDArray(
         # check below even though no data is ever read from a zero-size array. Negative
         # entries are left unclamped so the shape negativity check below still reports them with its own clear error message. STScI Roman L2 `.asdf` products contain such
         # zero-shape arrays (e.g. `chisq`, `dumo`) with no explicit `strides` key.
-        # A 0-dimensional array has no strides, as in NumPy.
         sz = sizeof(Type(datatype))
-        strides = isempty(shape) ? Int64[] : reverse(cumprod([sz; reverse(max.(shape[(begin + 1):end], 1))]))
+        strides = [sz * prod(max.(shape[(i + 1):end], 1)) for i in eachindex(shape)]
     end
     return NDArray(
         lazy_block_headers, source, data, Vector{Int64}(shape), datatype, byteorder, Int64(offset), Vector{Int64}(strides)
     )
 end
+
+# YAML reads an empty list, such as the `shape: []` of a 0-dimensional array, as a `Vector{Any}`.
+int64_list(list) = Int64[x::Integer for x in list::AbstractVector]
 
 function make_construct_yaml_ndarray(block_headers::LazyBlockHeaders)
     # Track which too-old tags we have already warned about so each distinct tag is reported at
@@ -821,13 +827,12 @@ function make_construct_yaml_ndarray(block_headers::LazyBlockHeaders)
         mapping = YAML.construct_mapping(constructor, node)
         source = get(mapping, "source", nothing)::Union{Nothing, Integer}
         data = get(mapping, "data", nothing)::Union{Nothing, AbstractVector}
-        shape = mapping["shape"]::AbstractVector
-        # YAML reads the shape `[]` of a 0-dimensional array as a `Vector{Any}`.
-        shape = isempty(shape) ? Int64[] : shape::AbstractVector{<:Integer}
+        shape = int64_list(mapping["shape"])
         datatype = mapping["datatype"] # No annotation needed, `parse_asdf_datatype` handles dispatch
         byteorder = get(mapping, "byteorder", nothing)::Union{Nothing, AbstractString}
         offset = get(mapping, "offset", nothing)::Union{Nothing, Integer}
-        strides = get(mapping, "strides", nothing)::Union{Nothing, AbstractVector{<:Integer}}
+        strides = get(mapping, "strides", nothing)
+        strides = strides isa Nothing ? nothing : int64_list(strides)
         ndarray = NDArray(block_headers, source, data, shape, datatype, byteorder, offset, strides)
         # The datatype should be representable by the tag's ndarray schema version: `float16` (and
         # `complex32`) were only added in 1.1.0. `min_ndarray_version` is the single source of truth,
@@ -1254,14 +1259,12 @@ end
 YAML._print(io::IO, val::YAMLScalar, level::Int = 0, ignore_level::Bool = false) = println(io, val.text)
 
 # Rewrite inline ndarray data so every float is emitted in YAML-1.1-compliant form. Document
-# metadata gets the same treatment from `_convert_tree`.
+# metadata gets the same treatment from `_convert_tree`. The data nests one list per dimension, the
+# first `shape` (last Julia) dimension outermost.
 yaml_compliant(val::AbstractFloat) = YAMLScalar(yaml_float_string(val))
-yaml_compliant(val::AbstractArray) = map(yaml_compliant, val)
+yaml_compliant(val::AbstractVector) = map(yaml_compliant, val)
+yaml_compliant(val::AbstractArray) = map(yaml_compliant, eachslice(val; dims = ndims(val)))
 yaml_compliant(val) = val
-
-# Inline ndarray data nests one list per dimension, the first `shape` (last Julia) dimension outermost.
-nest_inline_data(array::AbstractVector) = collect(array)
-nest_inline_data(array::AbstractArray) = [nest_inline_data(slice) for slice in eachslice(array; dims = ndims(array))]
 
 ################################################################################
 
@@ -1299,7 +1302,7 @@ end
 function make_construct_yaml_ndarray_chunk(block_headers::LazyBlockHeaders)
     function construct_yaml_ndarray_chunk(constructor::YAML.Constructor, node::YAML.Node)
         mapping = YAML.construct_mapping(constructor, node)
-        start = mapping["start"]::AbstractVector{<:Integer}
+        start = int64_list(mapping["start"])
         ndarray = mapping["ndarray"]::NDArray
         return NDArrayChunk(start, ndarray)
     end
@@ -1361,7 +1364,7 @@ end
 function make_construct_yaml_chunked_ndarray(block_headers::LazyBlockHeaders)
     function construct_yaml_chunked_ndarray(constructor::YAML.Constructor, node::YAML.Node)
         mapping = YAML.construct_mapping(constructor, node)
-        shape = mapping["shape"]::AbstractVector{<:Integer}
+        shape = int64_list(mapping["shape"])
         datatype = mapping["datatype"]
         chunks = mapping["chunks"]::AbstractVector{NDArrayChunk}
         return ChunkedNDArray(shape, datatype, chunks)
@@ -1675,11 +1678,11 @@ _convert_tree_children(value::ASDFLibrary, active) = value
 
 A write-side wrapper around a Julia array that carries compression and layout options. Used as the value type when building a document dict for [`ASDF.write_file`](@ref).
 
-Parameter     | Default   | Description                                                               |
-| :---------- | :-------- | :------------------------------------------------------------------------ |
-`compression` | `C_Bzip2` | Applied compression scheme                                                |
-`inline`      | `false`   | Embed data in YAML instead of a binary block                              |
-`lz4_layout`  | `:block`  | `:block` for Python-compatible chunked LZ4, `:frame` for LZ4 frame format |
+Parameter     | Default   | Description                                                                                                        |
+| :---------- | :-------- | :----------------------------------------------------------------------------------------------------------------- |
+`compression` | `C_Bzip2` | Applied compression scheme                                                                                         |
+`inline`      | `false`   | Embed data in YAML instead of a binary block. Needs at least one dimension and boolean, integer, or float elements |
+`lz4_layout`  | `:block`  | `:block` for Python-compatible chunked LZ4, `:frame` for LZ4 frame format                                          |
 
 !!! note
     If the compressed output is larger than the raw input, the block is stored uncompressed regardless of the chosen compression.
@@ -1694,7 +1697,18 @@ function NDArrayWrapper(array::AbstractArray; compression::Compression = C_Bzip2
     return NDArrayWrapper(array, compression, inline, lz4_layout)
 end
 Base.getindex(val::NDArrayWrapper) = val.array
-_convert_tree_children(value::NDArrayWrapper, active) = value
+
+# Reject arrays that cannot be stored inline here, before `write_file` opens the file.
+function _convert_tree_children(value::NDArrayWrapper, active)
+    value.inline || return value
+    array = value.array
+    # The ndarray schema requires inline `data` to be a list, and Python `asdf` also refuses.
+    ndims(array) == 0 && throw(ArgumentError("a 0-dimensional array cannot be stored inline; use `inline = false`"))
+    # Inline elements are YAML scalars, which YAML.jl reads back only as booleans, `Int64`s, and floats.
+    eltype(array) <: Union{Integer, AbstractFloat} || throw(ArgumentError("an array of $(eltype(array)) cannot be stored inline; use `inline = false`"))
+    eltype(array) <: UInt64 && any(>(typemax(Int64)), array) && throw(ArgumentError("`UInt64` values above `typemax(Int64)` cannot be stored inline; use `inline = false`"))
+    return value
+end
 
 """
     Blocks
@@ -1765,15 +1779,13 @@ infer_asdf_datatype(::Type{AsciiString{N}}) where {N} = AsciiDatatype(N)
 
 function YAML._print(io::IO, val::NDArrayWrapper, level::Int = 0, ignore_level::Bool = false)
     datatype = infer_asdf_datatype(eltype(val.array))
+    shape = collect(Int64, reverse(size(val.array)))
     if val.inline
-        # The ndarray schema requires inline `data` to be a list, and Python `asdf` also refuses.
-        ndims(val.array) == 0 && throw(ArgumentError("a 0-dimensional array cannot be stored inline; use `inline = false`"))
-        # Split multidimensional arrays into array-of-arrays
-        data = nest_inline_data(val.array)
         ndarray = OrderedDict(
             # Route inline data through the float pass so its elements get YAML-1.1 exponents too.
-            :data => yaml_compliant(data),
-            :shape => collect(Int64, reverse(size(val.array))),
+            # `collect` first: `eachslice` misindexes views of views with `Base.IdentityUnitRange` indices.
+            :data => yaml_compliant(collect(val.array)),
+            :shape => shape,
             :datatype => asdf_datatype_yaml(datatype), #string(Datatype(eltype(val.array))),
             # :offset => 0::Integer,
             # :strides => ::Vector{Int64},
@@ -1785,8 +1797,7 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int = 0, ignore_level::
         push!(blocks.arrays, val)
         ndarray = OrderedDict(
             :source => source::Integer,
-            # `collect(Int64, ...)` keeps the empty shape of a 0-dimensional array an integer vector.
-            :shape => collect(Int64, reverse(size(val.array))),
+            :shape => shape,
             :datatype => asdf_datatype_yaml(datatype),
             :byteorder => string(host_byteorder::Byteorder),
             # :offset => 0::Integer,

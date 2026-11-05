@@ -145,6 +145,7 @@ end
         "matrix" => Int16[1 2 3; 4 5 6],
         "cube" => reshape(collect(1.0:24.0), 2, 3, 4),
         "bool" => [true, false, true],
+        "uint64" => UInt64[0, typemax(Int64)],
         "empty" => Float64[],
         "empty_rows" => zeros(Float32, 0, 3),
         "empty_columns" => zeros(Float32, 3, 0),
@@ -161,26 +162,41 @@ end
         @test array′ == array
     end
     @test file["cube"].shape == [4, 3, 2]
+    # `eachslice` misindexes views of views with `Base.IdentityUnitRange` indices.
+    matrix = reshape(collect(1.0:12.0), 3, 4)
+    ASDF.write_file(path, Dict{Any, Any}("view" => ASDF.NDArrayWrapper(view(matrix, Base.IdentityUnitRange(2:3), :); inline = true)))
+    @test ASDF.load_file(path)["view"][] == matrix[2:3, :]
 end
 
 @testset "write 0-dimensional arrays" begin
-    # The shape of a 0-dimensional array is empty, which `collect(reverse(size(array)))` gave as a `Vector{Any}`.
+    # A 0-dimensional array is written with `shape: []`, which YAML reads back as a `Vector{Any}`.
     path = joinpath(mktempdir(; cleanup = true), "zero_dimensional.asdf")
-    arrays = Dict{Any, Any}(
-        "none" => (fill(1.5), ASDF.C_None),
-        "zlib" => (fill(Int16(-7)), ASDF.C_Zlib),
-        "bzp2" => (fill(true), ASDF.C_Bzip2),
-        "lz4" => (fill(2.5f0), ASDF.C_Lz4),
-    )
-    ASDF.write_file(path, Dict{Any, Any}(key => ASDF.NDArrayWrapper(array; compression) for (key, (array, compression)) in arrays))
-    @test occursin("shape: []", read(path, String))
+    arrays = Dict{Any, Any}("float64" => fill(1.5), "int16" => fill(Int16(-7)), "bool" => fill(true), "float32" => fill(2.5f0))
+    ASDF.write_file(path, Dict{Any, Any}(key => ASDF.NDArrayWrapper(array) for (key, array) in arrays))
+    text = read(path, String)
+    @test occursin("shape: []", text)
     file = ASDF.load_file(path)
-    for (key, (array, _)) in arrays
+    for (key, array) in arrays
         array′ = file[key][]
         @test size(array′) == ()
         @test eltype(array′) == eltype(array)
         @test array′[] == array[]
     end
+    # asdf-cxx writes `strides` even for 0-dimensional arrays. The reader finds blocks by scanning, so
+    # the YAML can grow.
+    write(path, replace(text, r"( *)shape: \[\]\n" => s"\0\1strides: []\n"))
+    @test ASDF.load_file(path)["float64"][] == fill(1.5)
+end
+
+@testset "reject arrays that cannot be stored inline" begin
     # The ndarray schema requires inline data to be a list, so a 0-dimensional array has no inline form.
-    @test_throws ArgumentError("a 0-dimensional array cannot be stored inline; use `inline = false`") ASDF.write_file(path, Dict{Any, Any}("a" => ASDF.NDArrayWrapper(fill(1.5); inline = true)))
+    # YAML.jl reads inline elements back only as booleans, `Int64`s, and floats. The arrays are rejected
+    # before `write_file` opens the file, which leaves an existing file intact.
+    path = joinpath(mktempdir(; cleanup = true), "existing.asdf")
+    ASDF.write_file(path, Dict{Any, Any}("kept" => 1))
+    contents = read(path)
+    for array in (fill(1.5), ComplexF64[1 + 2im], [(0x61, 0x62)], [(a = 1, b = 2.0)], UInt64[typemax(UInt64)])
+        @test_throws "cannot be stored inline; use `inline = false`" ASDF.write_file(path, Dict{Any, Any}("a" => ASDF.NDArrayWrapper(array; inline = true)))
+        @test read(path) == contents
+    end
 end
