@@ -200,3 +200,41 @@ end
         @test read(path) == contents
     end
 end
+
+@testset "ndarrays inside lists" begin
+    # A wrapper inside a YAML list printed the first key of its mapping at column 0, which made the
+    # file unreadable. Saving a loaded list again re-wraps its arrays, so that round trip is covered too.
+    path = joinpath(mktempdir(; cleanup = true), "list.asdf")
+    arrays = Any[ASDF.NDArrayWrapper([5.0, 6.0]), ASDF.NDArrayWrapper(Int16[1 2; 3 4]; inline = true)]
+    ASDF.write_file(path, Dict{Any, Any}("list" => arrays))
+    file = ASDF.load_file(path)
+    @test [array[] for array in file["list"]] == [[5.0, 6.0], Int16[1 2; 3 4]]
+    resaved = joinpath(dirname(path), "resaved.asdf")
+    ASDF.write_file(resaved, Dict{Any, Any}("list" => file["list"]))
+    @test [array[] for array in ASDF.load_file(resaved)["list"]] == [[5.0, 6.0], Int16[1 2; 3 4]]
+end
+
+@testset "a failed write leaves an existing file intact" begin
+    # The YAML part is serialized before the file is opened, and an array with no ASDF datatype fails there.
+    path = joinpath(mktempdir(; cleanup = true), "existing.asdf")
+    ASDF.write_file(path, Dict{Any, Any}("kept" => 1))
+    contents = read(path)
+    @test_throws KeyError ASDF.write_file(path, Dict{Any, Any}("a" => ASDF.NDArrayWrapper(["a", "b"])))
+    @test read(path) == contents
+end
+
+# A vector that throws as soon as its elements are read, which `write_file` does while writing its block.
+struct UnreadableVector <: AbstractVector{Float64} end
+Base.size(::UnreadableVector) = (2,)
+Base.getindex(::UnreadableVector, ::Int) = error("unreadable")
+
+@testset "a failed block write closes the file" begin
+    # The stream used to stay open after such an error, and its finalizer later flushed stale bytes over
+    # the next file saved to the same path.
+    path = joinpath(mktempdir(; cleanup = true), "reused.asdf")
+    @test_throws "unreadable" ASDF.write_file(path, Dict{Any, Any}("a" => ASDF.NDArrayWrapper(UnreadableVector())))
+    ASDF.write_file(path, Dict{Any, Any}("kept" => 1))
+    GC.gc()
+    GC.gc()
+    @test ASDF.load_file(path)["kept"] == 1
+end
