@@ -613,6 +613,15 @@ function Base.Type(sd::StructuredDatatype)
     return NamedTuple{names, types}
 end
 
+"""
+    itemsize(datatype) -> Int
+
+Number of bytes one element of `datatype` occupies in a block. ASDF, like NumPy, packs the fields of a [`StructuredDatatype`](@ref) record back to back, while the `NamedTuple` from `Type(datatype)`
+may pad them for alignment, so a record's `itemsize` can be smaller than its `sizeof`.
+"""
+itemsize(dt) = sizeof(Type(dt))
+itemsize(dt::StructuredDatatype) = sum(itemsize(f.datatype) for f in dt.fields; init = 0)
+
 function asdf_datatype_yaml(dt::StructuredDatatype)
     return map(dt.fields) do f
         # To-do: replace with OrderedDict after https://github.com/JuliaAstro/ASDF.jl/pull/26
@@ -808,7 +817,7 @@ function NDArray(
         # check below even though no data is ever read from a zero-size array. Negative
         # entries are left unclamped so the shape negativity check below still reports them with its own clear error message. STScI Roman L2 `.asdf` products contain such
         # zero-shape arrays (e.g. `chisq`, `dumo`) with no explicit `strides` key.
-        sz = sizeof(Type(datatype))
+        sz = itemsize(datatype)
         strides = [sz * prod(max.(shape[(i + 1):end], 1)) for i in eachindex(shape)]
     end
     return NDArray(
@@ -859,7 +868,7 @@ size(result) == Tuple(reverse(ndarray.shape))
 eltype(result) == ASDF.materialized_eltype(ndarray.datatype)
 ```
 
-For the `ucs4` and `ascii` string datatypes, [`materialized_eltype`](@ref) is a thin `AbstractString` view over the characters ([`UCS4String`](@ref) / [`AsciiString`](@ref); see [`stringify_data`](@ref)). For all other datatypes, `eltype(result) == Type(ndarray.datatype)` and additionally, when the array has at least one element, `sizeof(eltype) .* strides(result) == Tuple(reverse(ndarray.strides))` along every dimension with more than one element. (A dimension of length 1 has no well-defined stride, there is no pair of adjacent elements to space apart along it, and in a zero-element array no dimension does, so `reshape`/`reinterpret` are free to report any value there; such strides are excluded from this check.)
+For the `ucs4` and `ascii` string datatypes, [`materialized_eltype`](@ref) is a thin `AbstractString` view over the characters ([`UCS4String`](@ref) / [`AsciiString`](@ref); see [`stringify_data`](@ref)). For all other datatypes, `eltype(result) == Type(ndarray.datatype)` and additionally, when the array has at least one element, `sizeof(eltype) .* strides(result) == Tuple(reverse(ndarray.strides))` along every dimension with more than one element. The exception is a structured datatype whose `NamedTuple` pads its fields for alignment: the block packs them (see [`itemsize`](@ref)), so the records are read field by field into a dense array in Julia's own layout. (A dimension of length 1 has no well-defined stride, there is no pair of adjacent elements to space apart along it, and in a zero-element array no dimension does, so `reshape`/`reinterpret` are free to report any value there; such strides are excluded from this check.)
 """
 function Base.getindex(ndarray::NDArray)
     if ndarray.data !== nothing
@@ -871,26 +880,33 @@ function Base.getindex(ndarray::NDArray)
             )
         end
     elseif ndarray.source !== nothing
-        data = read_block(ndarray.lazy_block_headers.block_headers[ndarray.source + 1])
+        block = read_block(ndarray.lazy_block_headers.block_headers[ndarray.source + 1])
         # Handle strides and offset.
         # Do this before imposing the datatype because strides are given in bytes.
-        typesize = sizeof(Type(ndarray.datatype))
-        # `StridedView` reads `data` with `@inbounds`, so a corrupt or crafted
+        typesize = itemsize(ndarray.datatype)
+        # `StridedView` reads `block` with `@inbounds`, so a corrupt or crafted
         # `offset`, `shape`, or `strides` must not address bytes past the end of the block.
         # An empty array reads nothing. `big` keeps huge values from overflowing past the check.
         if all(>(0), ndarray.shape)
             nbytes = big(ndarray.offset) + sum(big.(ndarray.shape .- 1) .* ndarray.strides; init = big(0)) + typesize
-            nbytes <= length(data) || throw(ArgumentError("ndarray `offset`, `shape`, and `strides` address $nbytes bytes of a $(length(data))-byte block"))
+            nbytes <= length(block) || throw(ArgumentError("ndarray `offset`, `shape`, and `strides` address $nbytes bytes of a $(length(block))-byte block"))
         end
-        # Add a new dimension for the bytes that make up the datatype
-        shape = (typesize, reverse(ndarray.shape)...)
-        strides = (1, reverse(ndarray.strides)...)
-        data = StridedView(data, Int.(shape), Int.(strides), Int(ndarray.offset))
-        # Impose datatype
+        # View the elements' bytes starting `offset` bytes into the block as values of type `T`: add a
+        # leading dimension for the bytes of a `T`, impose `T`, then remove that dimension again.
+        dims = Tuple(Int.(reverse(ndarray.shape)))
+        strides = Tuple(Int.(reverse(ndarray.strides)))
+        view_as(T, offset) = reshape(reinterpret(T, StridedView(block, (sizeof(T), dims...), (1, strides...), Int(offset))), dims)
         NT = Type(ndarray.datatype)
-        data = reinterpret(NT, data)
-        # Remove the new dimension again
-        data = reshape(data, shape[2:end])
+        data = if typesize == sizeof(NT)
+            view_as(NT, ndarray.offset)
+        else
+            # The block packs the fields of a structured record, which Julia pads for alignment, so
+            # Read each field at its packed offset and assemble the records.
+            fields = (ndarray.datatype::StructuredDatatype).fields
+            sizes = [itemsize(f.datatype) for f in fields]
+            columns = [view_as(Type(f.datatype), ndarray.offset + o) for (f, o) in zip(fields, cumsum(sizes) .- sizes)]
+            map((values...) -> NT(values), columns...)
+        end
         # Correct byteorder if necessary.
         # Do this after imposing the datatype since byteorder depends on the datatype.
         data = correct_byteorder(data, ndarray.datatype, ndarray.byteorder)
@@ -906,11 +922,12 @@ function Base.getindex(ndarray::NDArray)
     # A dimension of length 1 has no meaningful stride (there is no pair of adjacent elements
     # to space apart along it), and in an empty array no dimension does — Julia reports
     # stride 0 along any dimension whose faster-varying dimensions include a zero length.
-    # Only compare strides where they are meaningful.
+    # Only compare strides where they are meaningful. Records assembled from padded fields are a dense
+    # copy in Julia's layout, so their strides follow that layout rather than the block's.
     computed_strides = sizeof(eltype(data)) .* Base.strides(data)
     expected_strides = Tuple(reverse(ndarray.strides))
     data_shape = size(data)
-    if !isempty(data) && any(data_shape[i] > 1 && computed_strides[i] != expected_strides[i] for i in eachindex(data_shape))
+    if sizeof(eltype(data)) == itemsize(ndarray.datatype) && !isempty(data) && any(data_shape[i] > 1 && computed_strides[i] != expected_strides[i] for i in eachindex(data_shape))
         error("`data` has different stride from `ndarray.strides`")
     end
 
@@ -1822,6 +1839,23 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int = 0, ignore_level::
     return YAML._print(io, ndarray, level)
 end
 
+# The bytes of a vector's elements as stored in a block. Julia pads the fields of a `NamedTuple`
+# record for alignment and the block packs them (see `itemsize`), so padded records are packed field
+# by field.
+block_bytes(array::AbstractVector) = reinterpret(UInt8, array)
+function block_bytes(array::AbstractVector{T}) where {T <: NamedTuple}
+    dt = infer_asdf_datatype(T)
+    itemsize(dt) == sizeof(T) && return reinterpret(UInt8, array)
+    bytes = Matrix{UInt8}(undef, itemsize(dt), length(array))
+    row = 0
+    for (k, field) in enumerate(dt.fields)
+        n = itemsize(field.datatype)
+        bytes[(row + 1):(row + n), :] = reshape(reinterpret(UInt8, map(record -> record[k], array)), n, :)
+        row += n
+    end
+    return vec(bytes)
+end
+
 function encode_Lz4_block(input::AbstractVector{UInt8}; chunk_size::Int = 1024 * 1024 * 8)
     out = UInt8[]
     offset = 1
@@ -1943,8 +1977,8 @@ function write_file(filename::AbstractString, document::AbstractDict)
                 input = input isa DenseArray ? input : Array(input)
                 # Reshape to 1D
                 input = reshape(input, :)
-                # Reinterpret as UInt8
-                input = reinterpret(UInt8, input)
+                # Reinterpret as UInt8, packing structured records
+                input = block_bytes(input)
 
                 data_size = UInt64(length(input))
 
@@ -1956,7 +1990,7 @@ function write_file(filename::AbstractString, document::AbstractDict)
                     #data = encode(LZ4BlockEncodeOptions(), input) # Not compatible with Python asdf
                 else
                     if array.compression == C_Blosc
-                        encode_options = BloscEncodeOptions(; clevel = 9, doshuffle = 2, typesize = sizeof(eltype(array.array)), compressor = "zstd")
+                        encode_options = BloscEncodeOptions(; clevel = 9, doshuffle = 2, typesize = itemsize(infer_asdf_datatype(eltype(array.array))), compressor = "zstd")
                     elseif array.compression == C_Bzip2
                         encode_options = BZ2EncodeOptions(; blockSize100k = 9)
                     elseif array.compression == C_Lz4 && array.lz4_layout == :frame
