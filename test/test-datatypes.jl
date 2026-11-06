@@ -170,4 +170,8 @@ end
         @test ASDF.load_file(path)["data"][] == records
         @test read_block_as(path, [36], "uint8")[] == packed
     end
+    # An empty array of padded records keeps its eltype both ways, which must not depend on inference.
+    path = joinpath(dir, "empty.asdf")
+    ASDF.write_file(path, Dict{Any, Any}("data" => ASDF.NDArrayWrapper(records[1:0])))
+    @test eltype(ASDF.load_file(path)["data"][]) == eltype(records)
 end

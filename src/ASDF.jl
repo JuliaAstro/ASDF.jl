@@ -905,7 +905,8 @@ function Base.getindex(ndarray::NDArray)
             fields = (ndarray.datatype::StructuredDatatype).fields
             sizes = [itemsize(f.datatype) for f in fields]
             columns = [view_as(Type(f.datatype), ndarray.offset + o) for (f, o) in zip(fields, cumsum(sizes) .- sizes)]
-            map((values...) -> NT(values), columns...)
+            # Typed, so an empty array still has eltype `NT` rather than whatever inference finds.
+            NT[NT(values) for values in zip(columns...)]
         end
         # Correct byteorder if necessary.
         # Do this after imposing the datatype since byteorder depends on the datatype.
@@ -1850,7 +1851,7 @@ function block_bytes(array::AbstractVector{T}) where {T <: NamedTuple}
     row = 0
     for (k, field) in enumerate(dt.fields)
         n = itemsize(field.datatype)
-        bytes[(row + 1):(row + n), :] = reshape(reinterpret(UInt8, map(record -> record[k], array)), n, :)
+        bytes[(row + 1):(row + n), :] = reshape(reinterpret(UInt8, fieldtype(T, k)[record[k] for record in array]), n, :)
         row += n
     end
     return vec(bytes)
