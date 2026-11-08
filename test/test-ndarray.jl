@@ -290,3 +290,20 @@ end
         @test eltype(rewritten[key][]) == eltype(file[key][])
     end
 end
+
+@testset "block-backed arrays stay inside their block" begin
+    # `StridedView` reads the block with `@inbounds`, so the `offset`, `shape`, and `strides` of a corrupt or crafted file
+    # are checked against the block length first. Reading past it returned heap memory or crashed.
+    path = joinpath(mktempdir(; cleanup = true), "bounds.asdf")
+    ASDF.write_file(path, Dict{Any, Any}("a" => ASDF.NDArrayWrapper([1.0, 2.0, 3.0]; compression = ASDF.C_None)))
+    nd = ASDF.load_file(path)["a"]
+    read_as(offset, shape, strides) = ASDF.NDArray(nd.lazy_block_headers, nd.source, nothing, shape, nd.datatype, nd.byteorder, offset, strides)[]
+    @test read_as(8, [2], [8]) == [2.0, 3.0] # ends exactly at the end of the 24-byte block
+    @test read_as(0, [2], [16]) == [1.0, 3.0]
+    @test read_as(16, Int64[], Int64[]) == fill(3.0)
+    @test size(read_as(1000, [0], [8])) == (0,) # an empty array reads nothing
+    # The last case overflows `Int64`, which would wrap around to a negative byte count.
+    for (offset, shape, strides) in ((16, [2], [8]), (4096, [3], [8]), (0, [100000], [8]), (2^40, Int64[], Int64[]), (0, [3], [2^62]))
+        @test_throws "-byte block" read_as(offset, shape, strides)
+    end
+end
