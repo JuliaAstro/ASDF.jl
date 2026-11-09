@@ -622,6 +622,10 @@ may pad them for alignment, so a record's `itemsize` can be smaller than its `si
 itemsize(dt) = sizeof(Type(dt))
 itemsize(dt::StructuredDatatype) = sum(itemsize(f.datatype) for f in dt.fields; init = 0)
 
+# A function barrier for records assembled from per-field columns.
+# Typed, so an empty array still has eltype `NT` rather than whatever inference finds.
+assemble_records(::Type{NT}, columns::Vararg{Any, N}) where {NT, N} = NT[NT(values) for values in zip(columns...)]
+
 function asdf_datatype_yaml(dt::StructuredDatatype)
     return map(dt.fields) do f
         # To-do: replace with OrderedDict after https://github.com/JuliaAstro/ASDF.jl/pull/26
@@ -905,8 +909,7 @@ function Base.getindex(ndarray::NDArray)
             fields = (ndarray.datatype::StructuredDatatype).fields
             sizes = [itemsize(f.datatype) for f in fields]
             columns = [view_as(Type(f.datatype), ndarray.offset + o) for (f, o) in zip(fields, cumsum(sizes) .- sizes)]
-            # Typed, so an empty array still has eltype `NT` rather than whatever inference finds.
-            NT[NT(values) for values in zip(columns...)]
+            assemble_records(NT, columns...)
         end
         # Correct byteorder if necessary.
         # Do this after imposing the datatype since byteorder depends on the datatype.
