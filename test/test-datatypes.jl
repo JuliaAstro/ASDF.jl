@@ -129,3 +129,49 @@ end
         @test arr == Float16[1.0, 2.0]
     end
 end
+
+@testset "structured records are packed in blocks" begin
+    # ASDF, like NumPy, packs the fields of a record, while this `NamedTuple` pads `a` to 8 bytes.
+    records = [(a = Int32(7), b = 7.25), (a = Int32(-1), b = 1.0e10), (a = Int32(3), b = -0.5)]
+    dt = ASDF.infer_asdf_datatype(eltype(records))
+    @test sizeof(eltype(records)) == 16
+    @test ASDF.itemsize(dt) == 12
+    packed = reduce(vcat, [[reinterpret(UInt8, [r.a]); reinterpret(UInt8, [r.b])] for r in records])
+    dir = mktempdir(; cleanup = true)
+    # The bytes of a block, read as the given shape and datatype.
+    function read_block_as(path, shape, datatype)
+        nd = ASDF.load_file(path)["data"]
+        return ASDF.NDArray(nd.lazy_block_headers, nd.source, nothing, shape, datatype, nothing, nothing, nothing)
+    end
+
+    # Packed bytes read back as records of any shape.
+    path = joinpath(dir, "packed.asdf")
+    ASDF.write_file(path, Dict{Any, Any}("data" => ASDF.NDArrayWrapper(packed; compression = ASDF.C_None)))
+    @test read_block_as(path, [3], dt).strides == [12]
+    @test read_block_as(path, [3], dt)[] == records
+    @test read_block_as(path, [1, 3], dt)[] == reshape(records, 3, 1)
+    @test read_block_as(path, Int64[], dt)[] == fill(records[1])
+    @test size(read_block_as(path, [0], dt)[]) == (0,)
+
+    # A big-endian field is swapped after the records are assembled.
+    swapped = copy(packed)
+    for i in 0:2
+        reverse!(swapped, 12i + 1, 12i + 4)
+    end
+    path = joinpath(dir, "big_endian.asdf")
+    ASDF.write_file(path, Dict{Any, Any}("data" => ASDF.NDArrayWrapper(swapped; compression = ASDF.C_None)))
+    big_endian = ASDF.StructuredDatatype([ASDF.StructuredField("a", ASDF.Datatype_int32, ASDF.Byteorder_big), dt.fields[2]])
+    @test read_block_as(path, [3], big_endian)[] == records
+
+    # Writing packs the records, before any compression.
+    for compression in (ASDF.C_None, ASDF.C_Blosc)
+        path = joinpath(dir, "records_$compression.asdf")
+        ASDF.write_file(path, Dict{Any, Any}("data" => ASDF.NDArrayWrapper(records; compression)))
+        @test ASDF.load_file(path)["data"][] == records
+        @test read_block_as(path, [36], "uint8")[] == packed
+    end
+    # An empty array of padded records keeps its eltype both ways, which must not depend on inference.
+    path = joinpath(dir, "empty.asdf")
+    ASDF.write_file(path, Dict{Any, Any}("data" => ASDF.NDArrayWrapper(records[1:0])))
+    @test eltype(ASDF.load_file(path)["data"][]) == eltype(records)
+end
