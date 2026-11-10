@@ -135,3 +135,11 @@ af.write_to("example.asdf")
 ```
 
 See the [PythonCall.jl documentation](https://juliapy.github.io/PythonCall.jl/stable/) for more.
+
+## Compression
+
+Which [compression schemes](@ref ASDF.Compression) the Python `asdf` reader understands depends on what is installed on the Python side:
+
+- `C_Zlib`, `C_Bzip2`, and `C_Lz4` (the chunked LZ4 block format of Python's built-in `lz4` compressor) are readable by a stock `asdf` install (`lz4` additionally needs the [`lz4`](https://python-lz4.readthedocs.io/) Python package).
+- `C_Lz4F` (`lz4f`, LZ4 frame), `C_Zstd`, and `C_Blosc`/`C_Blosc2` need the [asdf-compression](https://github.com/asdf-format/asdf-compression) extension.
+- `C_Xz` currently has no Python counterpart.
