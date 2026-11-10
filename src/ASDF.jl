@@ -801,6 +801,8 @@ function inline_element(T::Type{<:Tuple{Vararg{Union{UInt8, UInt32}}}}, s::Abstr
     eltype(T) === UInt8 && any(>(0x7f), codes) && throw(ArgumentError("inline string $(repr(s)) is not ASCII"))
     return T(ntuple(i -> i <= length(codes) ? codes[i] : 0, n))
 end
+# Any string makes the whole array a string array, so numbers among the strings become strings too.
+inline_element(T::Type{<:Tuple{Vararg{Union{UInt8, UInt32}}}}, x::Real) = inline_element(T, string(x))
 
 function NDArray(
         lazy_block_headers::LazyBlockHeaders,
@@ -1270,8 +1272,10 @@ end
 
 # Write a complex number in the `!core/complex-1.0.0` form, with the `i` suffix its schema recommends.
 function complex_string(z::Complex)
-    part(x) = isnan(x) ? "nan" : isinf(x) ? (x > 0 ? "inf" : "-inf") : string(Float64(x))
-    return string(part(real(z)), signbit(imag(z)) ? "-" : "+", part(abs(imag(z))), "i")
+    part(x) = isnan(x) ? "nan" : isinf(x) ? (x > 0 ? "inf" : "-inf") : string(x)
+    # Convert before taking the sign and magnitude: `abs(typemin(Int64))` overflows and stays negative.
+    x, y = Float64(real(z)), Float64(imag(z))
+    return string(part(x), signbit(y) ? "-" : "+", part(abs(y)), "i")
 end
 
 """
