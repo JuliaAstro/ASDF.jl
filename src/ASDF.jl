@@ -1632,7 +1632,7 @@ long.asdf
    ├─ name::String | ASDF.jl
    ├─ author::String | Erik Schnetter <schnetter@gmail.com>
    ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
-   └─ version::String | 2.1.0
+   └─ version::String | 2.1.1
 ```
 """
 function info(io::IO, af::ASDFFile; max_rows = 20)
@@ -1751,7 +1751,7 @@ myfile.asdf
    ├─ name::String | ASDF.jl
    ├─ author::String | Erik Schnetter <schnetter@gmail.com>
    ├─ homepage::String | https://github.com/JuliaAstro/ASDF.jl
-   └─ version::String | 2.1.0
+   └─ version::String | 2.1.1
 ```
 """
 function fileio_load(f::File{format"ASDF"}; kwargs...)
