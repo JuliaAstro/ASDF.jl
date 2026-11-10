@@ -765,10 +765,22 @@ function NDArray(
     if datatype isa AbstractString || datatype isa AbstractVector
         datatype = parse_asdf_datatype(datatype)
     end
+    if data isa AbstractVector
+        # Convert arrays of arrays into multi-dimensional arrays. The data nests one list per dimension with
+        # the first `shape` (last Julia) dimension outermost, so its elements in order are column-major for
+        # `reverse(shape)`. Unlike `stack`, flattening also handles empty and higher-dimensional data. Each
+        # level must have the length `shape` gives and the leaves must be scalars; flattening alone would
+        # accept data nested too shallowly or too deeply. Other arrays are already in Julia order.
+        shape_error = ArgumentError("`shape` does not correctly describe the shape of `data`.")
+        elements = Any[data]
+        for n in shape
+            all(item -> item isa AbstractVector && length(item) == n, elements) || throw(shape_error)
+            elements = collect(Iterators.flatten(elements))
+        end
+        any(item -> item isa AbstractVector, elements) && throw(shape_error)
+        data = reshape(elements, Tuple(reverse(shape)))
+    end
     if data !== nothing
-        # Convert arrays of arrays into multi-dimensional arrays
-        data = stack(data)
-        data = reshape(data, Tuple(reverse(shape)))
         # Correct element type
         data = Array{Type(datatype)}(data)
     end
@@ -791,12 +803,15 @@ function NDArray(
         # entries are left unclamped so the shape negativity check below still reports them with its own clear error message. STScI Roman L2 `.asdf` products contain such
         # zero-shape arrays (e.g. `chisq`, `dumo`) with no explicit `strides` key.
         sz = sizeof(Type(datatype))
-        strides = reverse(cumprod([sz; reverse(max.(shape[(begin + 1):end], 1))]))
+        strides = [sz * prod(max.(shape[(i + 1):end], 1)) for i in eachindex(shape)]
     end
     return NDArray(
         lazy_block_headers, source, data, Vector{Int64}(shape), datatype, byteorder, Int64(offset), Vector{Int64}(strides)
     )
 end
+
+# YAML reads an empty list, such as the `shape: []` of a 0-dimensional array, as a `Vector{Any}`.
+int64_list(list) = Int64[x::Integer for x in list::AbstractVector]
 
 function make_construct_yaml_ndarray(block_headers::LazyBlockHeaders)
     # Track which too-old tags we have already warned about so each distinct tag is reported at
@@ -806,11 +821,12 @@ function make_construct_yaml_ndarray(block_headers::LazyBlockHeaders)
         mapping = YAML.construct_mapping(constructor, node)
         source = get(mapping, "source", nothing)::Union{Nothing, Integer}
         data = get(mapping, "data", nothing)::Union{Nothing, AbstractVector}
-        shape = mapping["shape"]::AbstractVector{<:Integer}
+        shape = int64_list(mapping["shape"])
         datatype = mapping["datatype"] # No annotation needed, `parse_asdf_datatype` handles dispatch
         byteorder = get(mapping, "byteorder", nothing)::Union{Nothing, AbstractString}
         offset = get(mapping, "offset", nothing)::Union{Nothing, Integer}
-        strides = get(mapping, "strides", nothing)::Union{Nothing, AbstractVector{<:Integer}}
+        strides = get(mapping, "strides", nothing)
+        strides = strides isa Nothing ? nothing : int64_list(strides)
         ndarray = NDArray(block_headers, source, data, shape, datatype, byteorder, offset, strides)
         # The datatype should be representable by the tag's ndarray schema version: `float16` (and
         # `complex32`) were only added in 1.1.0. `min_ndarray_version` is the single source of truth,
@@ -853,6 +869,13 @@ function Base.getindex(ndarray::NDArray)
         # Handle strides and offset.
         # Do this before imposing the datatype because strides are given in bytes.
         typesize = sizeof(Type(ndarray.datatype))
+        # `StridedView` reads `data` with `@inbounds`, so a corrupt or crafted
+        # `offset`, `shape`, or `strides` must not address bytes past the end of the block.
+        # An empty array reads nothing. `big` keeps huge values from overflowing past the check.
+        if all(>(0), ndarray.shape)
+            nbytes = big(ndarray.offset) + sum(big.(ndarray.shape .- 1) .* ndarray.strides; init = big(0)) + typesize
+            nbytes <= length(data) || throw(ArgumentError("ndarray `offset`, `shape`, and `strides` address $nbytes bytes of a $(length(data))-byte block"))
+        end
         # Add a new dimension for the bytes that make up the datatype
         shape = (typesize, reverse(ndarray.shape)...)
         strides = (1, reverse(ndarray.strides)...)
@@ -1237,9 +1260,11 @@ end
 YAML._print(io::IO, val::YAMLScalar, level::Int = 0, ignore_level::Bool = false) = println(io, val.text)
 
 # Rewrite inline ndarray data so every float is emitted in YAML-1.1-compliant form. Document
-# metadata gets the same treatment from `_convert_tree`.
+# metadata gets the same treatment from `_convert_tree`. The data nests one list per dimension, the
+# first `shape` (last Julia) dimension outermost.
 yaml_compliant(val::AbstractFloat) = YAMLScalar(yaml_float_string(val))
-yaml_compliant(val::AbstractArray) = map(yaml_compliant, val)
+yaml_compliant(val::AbstractVector) = map(yaml_compliant, val)
+yaml_compliant(val::AbstractArray) = map(yaml_compliant, eachslice(val; dims = ndims(val)))
 yaml_compliant(val) = val
 
 ################################################################################
@@ -1278,7 +1303,7 @@ end
 function make_construct_yaml_ndarray_chunk(block_headers::LazyBlockHeaders)
     function construct_yaml_ndarray_chunk(constructor::YAML.Constructor, node::YAML.Node)
         mapping = YAML.construct_mapping(constructor, node)
-        start = mapping["start"]::AbstractVector{<:Integer}
+        start = int64_list(mapping["start"])
         ndarray = mapping["ndarray"]::NDArray
         return NDArrayChunk(start, ndarray)
     end
@@ -1340,7 +1365,7 @@ end
 function make_construct_yaml_chunked_ndarray(block_headers::LazyBlockHeaders)
     function construct_yaml_chunked_ndarray(constructor::YAML.Constructor, node::YAML.Node)
         mapping = YAML.construct_mapping(constructor, node)
-        shape = mapping["shape"]::AbstractVector{<:Integer}
+        shape = int64_list(mapping["shape"])
         datatype = mapping["datatype"]
         chunks = mapping["chunks"]::AbstractVector{NDArrayChunk}
         return ChunkedNDArray(shape, datatype, chunks)
@@ -1654,10 +1679,10 @@ _convert_tree_children(value::ASDFLibrary, active) = value
 
 A write-side wrapper around a Julia array that carries compression and layout options. Used as the value type when building a document dict for [`ASDF.write_file`](@ref).
 
-Parameter     | Default   | Description                                                               |
-| :---------- | :-------- | :------------------------------------------------------------------------ |
-`compression` | `C_Bzip2` | Applied compression scheme                                                |
-`inline`      | `false`   | Embed data in YAML instead of a binary block                              |
+Parameter     | Default   | Description                                                                                                        |
+| :---------- | :-------- | :----------------------------------------------------------------------------------------------------------------- |
+`compression` | `C_Bzip2` | Applied compression scheme                                                                                         |
+`inline`      | `false`   | Embed data in YAML instead of a binary block. Needs at least one dimension and boolean, integer, or float elements |
 
 !!! note
     If the compressed output is larger than the raw input, the block is stored uncompressed regardless of the chosen compression.
@@ -1671,7 +1696,18 @@ function NDArrayWrapper(array::AbstractArray; compression::Compression = C_Bzip2
     return NDArrayWrapper(array, compression, inline)
 end
 Base.getindex(val::NDArrayWrapper) = val.array
-_convert_tree_children(value::NDArrayWrapper, active) = value
+
+# Reject arrays that cannot be stored inline here, before `write_file` opens the file.
+function _convert_tree_children(value::NDArrayWrapper, active)
+    value.inline || return value
+    array = value.array
+    # The ndarray schema requires inline `data` to be a list, and Python `asdf` also refuses.
+    ndims(array) == 0 && throw(ArgumentError("a 0-dimensional array cannot be stored inline; use `inline = false`"))
+    # Inline elements are YAML scalars, which YAML.jl reads back only as booleans, `Int64`s, and floats.
+    eltype(array) <: Union{Integer, AbstractFloat} || throw(ArgumentError("an array of $(eltype(array)) cannot be stored inline; use `inline = false`"))
+    eltype(array) <: UInt64 && any(>(typemax(Int64)), array) && throw(ArgumentError("`UInt64` values above `typemax(Int64)` cannot be stored inline; use `inline = false`"))
+    return value
+end
 
 """
     Blocks
@@ -1742,14 +1778,13 @@ infer_asdf_datatype(::Type{AsciiString{N}}) where {N} = AsciiDatatype(N)
 
 function YAML._print(io::IO, val::NDArrayWrapper, level::Int = 0, ignore_level::Bool = false)
     datatype = infer_asdf_datatype(eltype(val.array))
+    shape = collect(Int64, reverse(size(val.array)))
     if val.inline
-        data = val.array
-        # Split multidimensional arrays into array-of-arrays
-        data = eachslice(data; dims = Tuple(2:ndims(data)))
         ndarray = OrderedDict(
             # Route inline data through the float pass so its elements get YAML-1.1 exponents too.
-            :data => yaml_compliant(data),
-            :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
+            # `collect` first: `eachslice` misindexes views of views with `Base.IdentityUnitRange` indices.
+            :data => yaml_compliant(collect(val.array)),
+            :shape => shape,
             :datatype => asdf_datatype_yaml(datatype), #string(Datatype(eltype(val.array))),
             # :offset => 0::Integer,
             # :strides => ::Vector{Int64},
@@ -1761,7 +1796,7 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int = 0, ignore_level::
         push!(blocks.arrays, val)
         ndarray = OrderedDict(
             :source => source::Integer,
-            :shape => collect(reverse(size(val.array)))::Vector{<:Integer},
+            :shape => shape,
             :datatype => asdf_datatype_yaml(datatype),
             :byteorder => string(host_byteorder::Byteorder),
             # :offset => 0::Integer,
@@ -1773,8 +1808,10 @@ function YAML._print(io::IO, val::NDArrayWrapper, level::Int = 0, ignore_level::
     # schema is 1.1.0, and 1.1.0 is a superset of 1.0.0 so it represents every datatype we support
     # (`min_ndarray_version` never exceeds it). This keeps `float16` arrays valid and round-trips
     # 1.1.0-tagged arrays unchanged.
+    # The tag ends its line, so the mapping always starts on the next one, indented. Passing on
+    # `ignore_level` (set for a list item) would put its first key at column 0.
     println(io, "!core/ndarray-1.1.0")
-    return YAML._print(io, ndarray, level, ignore_level)
+    return YAML._print(io, ndarray, level)
 end
 
 """
@@ -1813,10 +1850,12 @@ function write_file(filename::AbstractString, document::AbstractDict)
     # Convert package-owned objects and normalize floats before block collection.
     full_document = _convert_tree(full_document)
 
-    # Write YAML part of file
-    io = open(filename, "w")
+    # Serialize the YAML part before opening the file, so a value that fails to print (such as an array
+    # with no ASDF datatype) leaves an existing file intact. Blocks are still written straight to the
+    # file, so large arrays are not held in memory twice.
+    tree = IOBuffer()
     println(
-        io,
+        tree,
         """#ASDF 1.0.0
         #ASDF_STANDARD 1.6.0
         # This is an ASDF file <https://asdf-standard.readthedocs.io/>
@@ -1825,120 +1864,123 @@ function write_file(filename::AbstractString, document::AbstractDict)
         ---
         !core/asdf-1.1.0""",
     )
-    YAML.write(io, full_document)
-    println(io, "...")
+    YAML.write(tree, full_document)
+    println(tree, "...")
 
-    # Write blocks
-    if !isempty(blocks.arrays)
-        for array in blocks.arrays
-            source = length(blocks.positions)
-            pos = position(io)
-            push!(blocks.positions, pos)
+    # Write the file. The do-block closes `io` even if writing a block fails,
+    # so a leaked stream can't later flush stale bytes over the file.
+    open(filename, "w") do io
+        write(io, take!(tree))
 
-            # TODO: create function write_block_header
-            max_header_size = 6 + 48
-            header = Array{UInt8}(undef, max_header_size)
-            # # Skip the header.; the real header will be
-            # # written later once its contents are known
-            # skip(io, length(header))
+        # Write blocks
+        if !isempty(blocks.arrays)
+            for array in blocks.arrays
+                source = length(blocks.positions)
+                pos = position(io)
+                push!(blocks.positions, pos)
 
-            token = block_magic_token
-            header_size = 48
-            flags = 0               # not streamed
-            compression = compression_keys[array.compression]
+                # TODO: create function write_block_header
+                max_header_size = 6 + 48
+                header = Array{UInt8}(undef, max_header_size)
+                # # Skip the header.; the real header will be
+                # # written later once its contents are known
+                # skip(io, length(header))
 
-            # Write block
-            # TODO: create function write_block
+                token = block_magic_token
+                header_size = 48
+                flags = 0               # not streamed
+                compression = compression_keys[array.compression]
 
-            input = array.array
-            # Make dense (contiguous) if necessary
-            input = input isa DenseArray ? input : Array(input)
-            # Reshape to 1D
-            input = reshape(input, :)
-            # Reinterpret as UInt8
-            input = reinterpret(UInt8, input)
+                # Write block
+                # TODO: create function write_block
 
-            data_size = UInt64(length(input))
+                input = array.array
+                # Make dense (contiguous) if necessary
+                input = input isa DenseArray ? input : Array(input)
+                # Reshape to 1D
+                input = reshape(input, :)
+                # Reinterpret as UInt8
+                input = reinterpret(UInt8, input)
 
-            # TODO: Write directly to file
-            if array.compression == C_None
-                data = input
-            elseif array.compression == C_Lz4
-                data = encode_Lz4(input)
-            else
-                if array.compression == C_Blosc
-                    encode_options = BloscEncodeOptions(; clevel = 9, doshuffle = 2, typesize = sizeof(eltype(array.array)), compressor = "zstd")
-                elseif array.compression == C_Bzip2
-                    encode_options = BZ2EncodeOptions(; blockSize100k = 9)
-                elseif array.compression == C_Lz4F
-                    encode_options = LZ4FrameEncodeOptions(; compressionLevel = 12, blockSizeID = 7)
-                elseif array.compression == C_Xz
-                    encode_options = XZEncodeOptions(; preset = UInt32(6))
-                elseif array.compression == C_Zlib
-                    encode_options = ZlibEncodeOptions(; level = 9)
-                elseif array.compression == C_Zstd
-                    encode_options = ZstdEncodeOptions(; compressionLevel = 22)
+                data_size = UInt64(length(input))
+
+                # TODO: Write directly to file
+                if array.compression == C_None
+                    data = input
+                elseif array.compression == C_Lz4
+                    data = encode_Lz4(input)
                 else
-                    error("`array` has invalid state: `compression` field has value not specified in `Compression` enum.")
+                    if array.compression == C_Blosc
+                        encode_options = BloscEncodeOptions(; clevel = 9, doshuffle = 2, typesize = sizeof(eltype(array.array)), compressor = "zstd")
+                    elseif array.compression == C_Bzip2
+                        encode_options = BZ2EncodeOptions(; blockSize100k = 9)
+                    elseif array.compression == C_Lz4F
+                        encode_options = LZ4FrameEncodeOptions(; compressionLevel = 12, blockSizeID = 7)
+                    elseif array.compression == C_Xz
+                        encode_options = XZEncodeOptions(; preset = UInt32(6))
+                    elseif array.compression == C_Zlib
+                        encode_options = ZlibEncodeOptions(; level = 9)
+                    elseif array.compression == C_Zstd
+                        encode_options = ZstdEncodeOptions(; compressionLevel = 22)
+                    else
+                        error("`array` has invalid state: `compression` field has value not specified in `Compression` enum.")
+                    end
+                    data = encode(encode_options, input)
                 end
-                data = encode(encode_options, input)
+
+                # Don't compress unless it reduces the size
+                if length(data) >= length(input)
+                    compression = compression_keys[C_None]
+                    data = input
+                end
+
+                # We need the standard, dense layout
+                data::AbstractVector{UInt8}
+                data::Union{DenseArray, Base.ReinterpretArray{<:Any, <:Any, <:Any, <:DenseArray}}
+
+                used_size = length(data)
+                allocated_size = used_size
+                checksum = Vector{UInt8}(md5(data))
+
+                # Fill header
+                header[1:4] .= token
+                header[5:6] .= native2big_U16(header_size)
+                header[7:10] .= native2big_U32(flags)
+                header[11:14] .= compression
+                header[15:22] .= native2big_U64(allocated_size)
+                header[23:30] .= native2big_U64(used_size)
+                header[31:38] .= native2big_U64(data_size)
+                header[39:54] .= checksum
+
+                # Write header
+                # endpos = position(io)
+                # seek(io, pos)
+                write(io, header)
+                # seek(io, endpos)
+
+                # Write data
+                write(io, data)
+
+                # Check consistency
+                endpos = position(io)
+                @assert endpos == pos + 6 + header_size + allocated_size # Ending position matches number of bytes written
             end
+            # Global `blocks` should have valid state: number of arrays matches number of `positions`.
+            # If not, check that `write_file()` and `YAML._print()` match.
+            @assert length(blocks.positions) == length(blocks.arrays)
 
-            # Don't compress unless it reduces the size
-            if length(data) >= length(input)
-                compression = compression_keys[C_None]
-                data = input
+            # Write block list
+            println(io, "#ASDF BLOCK INDEX")
+            println(io, "%YAML 1.1")
+            println(io, "---")
+            print(io, "[")
+            for pos in blocks.positions
+                print(io, pos, ",")
             end
-
-            # We need the standard, dense layout
-            data::AbstractVector{UInt8}
-            data::Union{DenseArray, Base.ReinterpretArray{<:Any, <:Any, <:Any, <:DenseArray}}
-
-            used_size = length(data)
-            allocated_size = used_size
-            checksum = Vector{UInt8}(md5(data))
-
-            # Fill header
-            header[1:4] .= token
-            header[5:6] .= native2big_U16(header_size)
-            header[7:10] .= native2big_U32(flags)
-            header[11:14] .= compression
-            header[15:22] .= native2big_U64(allocated_size)
-            header[23:30] .= native2big_U64(used_size)
-            header[31:38] .= native2big_U64(data_size)
-            header[39:54] .= checksum
-
-            # Write header
-            # endpos = position(io)
-            # seek(io, pos)
-            write(io, header)
-            # seek(io, endpos)
-
-            # Write data
-            write(io, data)
-
-            # Check consistency
-            endpos = position(io)
-            @assert endpos == pos + 6 + header_size + allocated_size # Ending position matches number of bytes written
+            println(io, "]")
+            println(io, "...")
         end
-        # Global `blocks` should have valid state: number of arrays matches number of `positions`.
-        # If not, check that `write_file()` and `YAML._print()` match.
-        @assert length(blocks.positions) == length(blocks.arrays)
-
-        # Write block list
-        println(io, "#ASDF BLOCK INDEX")
-        println(io, "%YAML 1.1")
-        println(io, "---")
-        print(io, "[")
-        for pos in blocks.positions
-            print(io, pos, ",")
-        end
-        println(io, "]")
-        println(io, "...")
     end
-
-    # Close file
-    close(io)
 
     # Clean up
     empty!(blocks)
