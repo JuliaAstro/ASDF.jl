@@ -336,6 +336,7 @@ end
         empty: !core/ndarray-1.1.0 []
         complex: !core/ndarray-1.1.0 [!core/complex-1.0.0 (1+2j), !core/complex-1.0.0 3-4J, 5]
         strings: !core/ndarray-1.1.0 [abc, de]
+        mixed: !core/ndarray-1.1.0 [a, 12345]
         """
     )
     for (key, expected) in (
@@ -353,6 +354,9 @@ end
     # Strings infer `ucs4` as wide as the longest one.
     @test file["strings"][] == ["abc", "de"]
     @test eltype(file["strings"][]) == ASDF.UCS4String{3}
+    # Numbers among strings become strings, and count towards the width.
+    @test file["mixed"][] == ["a", "12345"]
+    @test eltype(file["mixed"][]) == ASDF.UCS4String{5}
 end
 
 @testset "inline strings, complex values and nulls" begin
