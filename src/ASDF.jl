@@ -782,8 +782,8 @@ end
 
 # The datatype of inline data given without one, by the ndarray schema's inference rules.
 function inline_datatype(elements)
-    strings = filter(x -> x isa AbstractString, elements)
-    isempty(strings) || return Ucs4Datatype(maximum(length, strings))
+    # At least 1, as in NumPy: all-empty strings would otherwise give zero-byte elements and strides.
+    any(x -> x isa AbstractString, elements) && return Ucs4Datatype(max(1, maximum(length ∘ string, elements)))
     any(x -> x isa Complex, elements) && return Datatype_complex128
     any(x -> x isa AbstractFloat, elements) && return Datatype_float64
     any(x -> x isa Integer && !(x isa Bool), elements) && return Datatype_int64
