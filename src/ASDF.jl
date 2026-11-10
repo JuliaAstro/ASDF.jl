@@ -768,12 +768,48 @@ struct NDArray
     end
 end
 
+# The shape of nested inline lists, read along their first elements; the constructor checks every level.
+function inline_shape(data::AbstractVector)
+    shape = Int64[]
+    level = data
+    while level isa AbstractVector
+        push!(shape, length(level))
+        isempty(level) && break
+        level = first(level)
+    end
+    return shape
+end
+
+# The datatype of inline data given without one, by the ndarray schema's inference rules.
+function inline_datatype(elements)
+    # At least 1, as in NumPy: all-empty strings would otherwise give zero-byte elements and strides.
+    any(x -> x isa AbstractString, elements) && return Ucs4Datatype(max(1, maximum(length ∘ string, elements)))
+    any(x -> x isa Complex, elements) && return Datatype_complex128
+    any(x -> x isa AbstractFloat, elements) && return Datatype_float64
+    any(x -> x isa Integer && !(x isa Bool), elements) && return Datatype_int64
+    # NumPy also makes an empty array `float64`.
+    return isempty(elements) ? Datatype_float64 : Datatype_bool8
+end
+
+# An inline element as a value of the datatype's Julia type. `ascii` and `ucs4` elements are YAML
+# strings, stored as their character codes padded with nulls to the datatype's length.
+inline_element(T::Type, x) = convert(T, x)
+function inline_element(T::Type{<:Tuple{Vararg{Union{UInt8, UInt32}}}}, s::AbstractString)
+    n = fieldcount(T)
+    codes = [UInt32(c) for c in s]
+    length(codes) <= n || throw(ArgumentError("inline string $(repr(s)) is longer than the $n characters of its datatype"))
+    eltype(T) === UInt8 && any(>(0x7f), codes) && throw(ArgumentError("inline string $(repr(s)) is not ASCII"))
+    return T(ntuple(i -> i <= length(codes) ? codes[i] : 0, n))
+end
+# Any string makes the whole array a string array, so numbers among the strings become strings too.
+inline_element(T::Type{<:Tuple{Vararg{Union{UInt8, UInt32}}}}, x::Real) = inline_element(T, string(x))
+
 function NDArray(
         lazy_block_headers::LazyBlockHeaders,
         source::Union{Nothing, Integer},
         data::Union{Nothing, AbstractArray},
-        shape::AbstractVector{<:Integer},
-        datatype::Union{Datatype, StructuredDatatype, AsciiDatatype, Ucs4Datatype, AbstractString, AbstractVector},
+        shape::Union{Nothing, AbstractVector{<:Integer}},
+        datatype::Union{Nothing, Datatype, StructuredDatatype, AsciiDatatype, Ucs4Datatype, AbstractString, AbstractVector},
         byteorder::Union{Nothing, Byteorder, AbstractString},
         offset::Union{Nothing, Integer} = 0,
         strides::Union{Nothing, <:AbstractVector{<:Integer}} = nothing,
@@ -785,6 +821,10 @@ function NDArray(
         datatype = parse_asdf_datatype(datatype)
     end
     if data isa AbstractVector
+        # Inline data may leave out its `shape` and `datatype`, which are then inferred from it.
+        if shape isa Nothing
+            shape = inline_shape(data)
+        end
         # Convert arrays of arrays into multi-dimensional arrays. The data nests one list per dimension with
         # the first `shape` (last Julia) dimension outermost, so its elements in order are column-major for
         # `reverse(shape)`. Unlike `stack`, flattening also handles empty and higher-dimensional data. Each
@@ -797,11 +837,18 @@ function NDArray(
             elements = collect(Iterators.flatten(elements))
         end
         any(item -> item isa AbstractVector, elements) && throw(shape_error)
+        # `null` marks a masked value, which is not supported yet.
+        any(isnothing, elements) && throw(ArgumentError("masked inline values (`null`) are not supported yet"))
+        if datatype isa Nothing
+            datatype = inline_datatype(elements)
+        end
         data = reshape(elements, Tuple(reverse(shape)))
     end
+    (shape isa Nothing || datatype isa Nothing) && throw(ArgumentError("an ndarray without inline `data` needs `shape` and `datatype`"))
     if data !== nothing
         # Correct element type
-        data = Array{Type(datatype)}(data)
+        T = Type(datatype)
+        data = T[inline_element(T, x) for x in data]
     end
     if byteorder isa Nothing
         byteorder = host_byteorder
@@ -837,11 +884,17 @@ function make_construct_yaml_ndarray(block_headers::LazyBlockHeaders)
     # most once per load (a file may hold many ndarray nodes sharing one non-conformant tag).
     warned_tags = Set{String}()
     function construct_yaml_ndarray(constructor::YAML.Constructor, node::YAML.Node)
-        mapping = YAML.construct_mapping(constructor, node)
+        # The whole tag may be the inline data itself, a nested list whose type is inferred.
+        mapping = if node isa YAML.SequenceNode
+            Dict{Any, Any}("data" => YAML.construct_sequence(constructor, node))
+        else
+            YAML.construct_mapping(constructor, node)
+        end
         source = get(mapping, "source", nothing)::Union{Nothing, Integer}
         data = get(mapping, "data", nothing)::Union{Nothing, AbstractVector}
-        shape = int64_list(mapping["shape"])
-        datatype = mapping["datatype"] # No annotation needed, `parse_asdf_datatype` handles dispatch
+        shape = get(mapping, "shape", nothing)
+        shape = shape isa Nothing ? nothing : int64_list(shape)
+        datatype = get(mapping, "datatype", nothing) # No annotation needed, `parse_asdf_datatype` handles dispatch
         byteorder = get(mapping, "byteorder", nothing)::Union{Nothing, AbstractString}
         offset = get(mapping, "offset", nothing)::Union{Nothing, Integer}
         strides = get(mapping, "strides", nothing)
@@ -1199,6 +1252,32 @@ function YAML._print(io::IO, val::TaggedScalar, level::Int = 0, ignore_level::Bo
     return YAML._print(io, val.value, level, ignore_level)
 end
 
+const complex_tag = "tag:stsci.edu:asdf/core/complex-1.0.0"
+
+# Read a `!core/complex-1.0.0` value such as `1-1j`, `2.5J`, `-1` or `(1+2i)`: a real part, an
+# imaginary part marked by a `j`, `J`, `i` or `I` suffix, or both joined by the imaginary part's sign.
+function parse_complex(text::AbstractString)
+    s = strip(text)
+    if startswith(s, '(') && endswith(s, ')')
+        s = strip(s[2:(end - 1)])
+    end
+    last(s) in "jJiI" || return complex(parse(Float64, s))
+    imaginary = chop(s)
+    # The imaginary part starts at the last sign that neither opens the value nor follows an exponent.
+    bytes = codeunits(imaginary)
+    k = findlast(i -> i > 1 && bytes[i] in UInt8.(('+', '-')) && !(bytes[i - 1] in UInt8.(('e', 'E'))), eachindex(bytes))
+    k === nothing && return complex(0.0, parse(Float64, imaginary))
+    return complex(parse(Float64, SubString(imaginary, 1, prevind(imaginary, k))), parse(Float64, SubString(imaginary, k)))
+end
+
+# Write a complex number in the `!core/complex-1.0.0` form, with the `i` suffix its schema recommends.
+function complex_string(z::Complex)
+    part(x) = isnan(x) ? "nan" : isinf(x) ? (x > 0 ? "inf" : "-inf") : string(x)
+    # Convert before taking the sign and magnitude: `abs(typemin(Int64))` overflows and stays negative.
+    x, y = Float64(real(z)), Float64(imag(z))
+    return string(part(x), signbit(y) ? "-" : "+", part(abs(y)), "i")
+end
+
 """
     ASDF.to_tree(value)
 
@@ -1229,6 +1308,7 @@ end
 _convert_tree_children(value::Union{Nothing, Integer, AbstractString, Date, DateTime}, active) = value
 _convert_tree_children(value::AbstractFloat, active) = YAMLScalar(yaml_float_string(value))
 _convert_tree_children(value::Symbol, active) = String(value)
+_convert_tree_children(value::Complex, active) = TaggedScalar(complex_tag, complex_string(value))
 _convert_tree_children(value::NDArray, active) = value
 _convert_tree_children(value::NamedTuple, active) = OrderedDict{Any, Any}(String(key) => _convert_tree(item, active) for (key, item) in pairs(value))
 _convert_tree_children(value::Tuple, active) = [_convert_tree(item, active) for item in value]
@@ -1603,6 +1683,7 @@ function load_file(filename::AbstractString; extensions = false, validate_checks
     asdf_constructors["tag:stsci.edu:asdf/core/asdf-1.1.0"] = tagged_map_constructor
     asdf_constructors["tag:stsci.edu:asdf/core/software-1.0.0"] = tagged_map_constructor
     asdf_constructors["tag:stsci.edu:asdf/core/extension_metadata-1.0.0"] = tagged_map_constructor
+    asdf_constructors[complex_tag] = (constructor, node) -> parse_complex(YAML.construct_scalar(constructor, node))
 
     if extensions
         # Use fallbacks for now. Track which unrecognized tags we have already

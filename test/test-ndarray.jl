@@ -307,3 +307,91 @@ end
         @test_throws "-byte block" read_as(offset, shape, strides)
     end
 end
+
+# Load a file whose tree is `tree`.
+function load_tree(tree)
+    path = joinpath(mktempdir(; cleanup = true), "tree.asdf")
+    write(path, "#ASDF 1.0.0\n#ASDF_STANDARD 1.6.0\n%YAML 1.1\n%TAG ! tag:stsci.edu:asdf/\n--- !core/asdf-1.1.0\n" * tree * "...\n")
+    return ASDF.load_file(path)
+end
+
+@testset "inline data with inferred shape and datatype" begin
+    # Inline data may leave out `shape` and `datatype`, and the whole tag may be the nested list.
+    # The first two are the ndarray schema's own examples; the rest follow its inference rules.
+    file = load_tree(
+        """
+        implicit: !core/ndarray-1.1.0
+          [[1, 0, 0],
+           [0, 1, 0],
+           [0, 0, 1]]
+        explicit: !core/ndarray-1.1.0
+          datatype: float64
+          data:
+            [[1, 0, 0],
+             [0, 1, 0],
+             [0, 0, 1]]
+        rows: !core/ndarray-1.1.0 [[1, 2, 3], [4, 5, 6]]
+        floats: !core/ndarray-1.1.0 [1, 2.5]
+        bools: !core/ndarray-1.1.0 [true, false]
+        empty: !core/ndarray-1.1.0 []
+        complex: !core/ndarray-1.1.0 [!core/complex-1.0.0 (1+2j), !core/complex-1.0.0 3-4J, 5]
+        strings: !core/ndarray-1.1.0 [abc, de]
+        mixed: !core/ndarray-1.1.0 [a, 12345]
+        """
+    )
+    for (key, expected) in (
+            "implicit" => [1 0 0; 0 1 0; 0 0 1],
+            "explicit" => [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0],
+            "rows" => [1 4; 2 5; 3 6],
+            "floats" => [1.0, 2.5],
+            "bools" => [true, false],
+            "empty" => Float64[],
+            "complex" => ComplexF64[1 + 2im, 3 - 4im, 5],
+        )
+        @test file[key][] == expected
+        @test eltype(file[key][]) == eltype(expected)
+    end
+    # Strings infer `ucs4` as wide as the longest one.
+    @test file["strings"][] == ["abc", "de"]
+    @test eltype(file["strings"][]) == ASDF.UCS4String{3}
+    # Numbers among strings become strings, and count towards the width.
+    @test file["mixed"][] == ["a", "12345"]
+    @test eltype(file["mixed"][]) == ASDF.UCS4String{5}
+end
+
+@testset "inline strings, complex values and nulls" begin
+    # `ascii` and `ucs4` elements are YAML strings, null-padded to the datatype's length.
+    file = load_tree(
+        """
+        ascii: !core/ndarray-1.1.0 {data: [abc, de], datatype: [ascii, 3]}
+        ucs4: !core/ndarray-1.1.0 {data: [abc, é], datatype: [ucs4, 3]}
+        complex64: !core/ndarray-1.1.0 {data: [!core/complex-1.0.0 1i, 2], datatype: complex64}
+        """
+    )
+    @test file["ascii"][] == ["abc", "de"]
+    @test eltype(file["ascii"][]) == ASDF.AsciiString{3}
+    @test file["ucs4"][] == ["abc", "é"]
+    @test file["complex64"][] == ComplexF32[1im, 2]
+    @test eltype(file["complex64"][]) == ComplexF32
+    for (tree, message) in (
+            ("a: !core/ndarray-1.1.0 {data: [abcd], datatype: [ascii, 3]}\n", "is longer than the 3 characters"),
+            ("a: !core/ndarray-1.1.0 {data: [é], datatype: [ascii, 3]}\n", "is not ASCII"),
+            # Masked values are not supported yet; see asdf-format/asdf-standard#451 and #452.
+            ("a: !core/ndarray-1.1.0 {data: [1.0, null], datatype: float64}\n", "not supported yet"),
+            ("a: !core/ndarray-1.1.0 {source: 0, datatype: float64, byteorder: little}\n", "needs `shape` and `datatype`"),
+        )
+        @test_throws message load_tree(tree)
+    end
+end
+
+@testset "complex scalars" begin
+    # `!core/complex-1.0.0` values read as `ComplexF64`, in every form its schema allows, and are
+    # written back with the same tag.
+    file = load_tree("values: [!core/complex-1.0.0 1-1j, !core/complex-1.0.0 1J, !core/complex-1.0.0 -1, !core/complex-1.0.0 (1.5e-3+2e+2I), !core/complex-1.0.0 inf-nanj]\n")
+    values = ComplexF64[1 - 1im, 1im, -1, 0.0015 + 200im, complex(Inf, NaN)]
+    @test isequal(file["values"], values)
+    path = joinpath(mktempdir(; cleanup = true), "complex.asdf")
+    ASDF.write_file(path, file.metadata)
+    @test occursin("!core/complex-1.0.0 \"1.0-1.0i\"", read(path, String))
+    @test isequal(ASDF.load_file(path)["values"], values)
+end
