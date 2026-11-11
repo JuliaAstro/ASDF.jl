@@ -201,6 +201,38 @@ end
     end
 end
 
+@testset "write string arrays as ucs4" begin
+    # Like a NumPy unicode array, a wrapped string array is a `ucs4` ndarray as wide as its longest string,
+    # and at least 1 wide. A plain vector of strings stays a YAML list.
+    path = joinpath(mktempdir(; cleanup = true), "strings.asdf")
+    arrays = Dict{Any, Any}("matrix" => ["" "right"; "left" ""], "unicode" => ["é", "🎉x", "true", "1", "a\nb", "\"q\""], "empty_strings" => ["", ""], "no_strings" => String[], "zero_dimensional" => fill("abc"), "substrings" => split("a bc"))
+    widths = Dict("matrix" => 5, "unicode" => 4, "empty_strings" => 1, "no_strings" => 1, "zero_dimensional" => 3, "substrings" => 2)
+    for inline in (false, true)
+        written = inline ? delete!(copy(arrays), "zero_dimensional") : arrays
+        ASDF.write_file(path, Dict{Any, Any}("list" => ["a", "b"], (key => ASDF.NDArrayWrapper(array; inline) for (key, array) in written)...))
+        file = ASDF.load_file(path)
+        @test file["list"] == ["a", "b"]
+        for (key, array) in written
+            @test file[key].datatype == ASDF.Ucs4Datatype(widths[key])
+            @test eltype(file[key][]) == ASDF.UCS4String{widths[key]}
+            @test size(file[key][]) == size(array)
+            @test file[key][] == array
+        end
+    end
+    # Compression applies to the block of code points.
+    labels = repeat(["left", "right"], 100)
+    ASDF.write_file(path, Dict{Any, Any}("labels" => ASDF.NDArrayWrapper(labels; compression = ASDF.C_Zlib)))
+    file = ASDF.load_file(path)
+    @test ASDF.compression_enums[file["labels"].lazy_block_headers.block_headers[1].compression] == ASDF.C_Zlib
+    @test file["labels"][] == labels
+    # Loaded `ascii` arrays keep their datatype, inline too.
+    ASDF.write_file(path, Dict{Any, Any}("ascii" => ASDF.NDArrayWrapper([ASDF.AsciiString((0x61, 0x62)), ASDF.AsciiString((0x63, 0x00))]; inline = true)))
+    file = ASDF.load_file(path)
+    @test file["ascii"].datatype == ASDF.AsciiDatatype(2)
+    @test file["ascii"][] == ["ab", "c"]
+    @test_throws "string \"a\\xffb\" contains the invalid character '\\xff', which has no UCS-4 code point" ASDF.write_file(path, Dict{Any, Any}("a" => ASDF.NDArrayWrapper(["a\xffb"])))
+end
+
 @testset "ndarrays inside lists" begin
     # A wrapper inside a YAML list printed the first key of its mapping at column 0, which made the
     # file unreadable. Saving a loaded list again re-wraps its arrays, so that round trip is covered too.
@@ -219,7 +251,7 @@ end
     path = joinpath(mktempdir(; cleanup = true), "existing.asdf")
     ASDF.write_file(path, Dict{Any, Any}("kept" => 1))
     contents = read(path)
-    @test_throws KeyError ASDF.write_file(path, Dict{Any, Any}("a" => ASDF.NDArrayWrapper(["a", "b"])))
+    @test_throws KeyError ASDF.write_file(path, Dict{Any, Any}("a" => ASDF.NDArrayWrapper([:a, :b])))
     @test read(path) == contents
 end
 
