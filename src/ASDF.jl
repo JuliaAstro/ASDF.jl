@@ -1787,10 +1787,12 @@ _convert_tree_children(value::ASDFLibrary, active) = value
 
 A write-side wrapper around a Julia array that carries compression and layout options. Used as the value type when building a document dict for [`ASDF.write_file`](@ref).
 
+An array of strings is written as a `ucs4` array as wide as its longest string (at least 1 character), like a NumPy unicode array.
+
 Parameter     | Default   | Description                                                                                                        |
 | :---------- | :-------- | :----------------------------------------------------------------------------------------------------------------- |
 `compression` | `C_Bzip2` | Applied compression scheme                                                                                         |
-`inline`      | `false`   | Embed data in YAML instead of a binary block. Needs at least one dimension and boolean, integer, or float elements |
+`inline`      | `false`   | Embed data in YAML instead of a binary block. Needs at least one dimension and boolean, integer, float, or string elements |
 `lz4_layout`  | `:block`  | `:block` for Python-compatible chunked LZ4, `:frame` for LZ4 frame format                                          |
 
 !!! note
@@ -1807,14 +1809,31 @@ function NDArrayWrapper(array::AbstractArray; compression::Compression = C_Bzip2
 end
 Base.getindex(val::NDArrayWrapper) = val.array
 
+# Strings are stored as `ucs4`, as wide as the longest one, like a NumPy unicode array (at least 1).
+function ucs4_array(array::AbstractArray{<:AbstractString})
+    n = max(1, maximum(length, array; init = 0))
+    out = Array{UCS4String{n}}(undef, size(array))
+    for (i, s) in enumerate(array)
+        codes = map(collect(s)) do c
+            isvalid(c) || throw(ArgumentError("string $(repr(s)) contains the invalid character $(repr(c)), which has no UCS-4 code point"))
+            UInt32(c)
+        end
+        out[i] = UCS4String{n}(ntuple(j -> get(codes, j, 0x00000000), n))
+    end
+    return out
+end
+
 # Reject arrays that cannot be stored inline here, before `write_file` opens the file.
 function _convert_tree_children(value::NDArrayWrapper, active)
+    if eltype(value.array) <: AbstractString && !(eltype(value.array) <: ASDFString)
+        value = NDArrayWrapper(ucs4_array(value.array), value.compression, value.inline, value.lz4_layout)
+    end
     value.inline || return value
     array = value.array
     # The ndarray schema requires inline `data` to be a list, and Python `asdf` also refuses.
     ndims(array) == 0 && throw(ArgumentError("a 0-dimensional array cannot be stored inline; use `inline = false`"))
-    # Inline elements are YAML scalars, which YAML.jl reads back only as booleans, `Int64`s, and floats.
-    eltype(array) <: Union{Integer, AbstractFloat} || throw(ArgumentError("an array of $(eltype(array)) cannot be stored inline; use `inline = false`"))
+    # Inline elements are YAML scalars, which YAML.jl reads back only as booleans, `Int64`s, floats, and strings.
+    eltype(array) <: Union{Integer, AbstractFloat, ASDFString} || throw(ArgumentError("an array of $(eltype(array)) cannot be stored inline; use `inline = false`"))
     eltype(array) <: UInt64 && any(>(typemax(Int64)), array) && throw(ArgumentError("`UInt64` values above `typemax(Int64)` cannot be stored inline; use `inline = false`"))
     return value
 end
