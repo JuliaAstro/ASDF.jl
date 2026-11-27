@@ -88,8 +88,8 @@ Every binary block in an ASDF file begins with a fixed-layout header that descri
 
 The block occupies the following byte range within `io`, starting at `position`:
 
-|                                |                      | |
-| :--                            | :--                  | :-- |
+|                                |                      |             |
+| :--                            | :--                  | :--         |
 | `[position]`                   | 4 bytes              | magic token |
 | `[position + 4]`               | 2 bytes              | header_size  (big-endian UInt16) |
 | `[position + 6]`               | header_size bytes    |      extended header fields |
@@ -116,23 +116,31 @@ end
 """
     LazyBlockHeaders
 
-A mutable container holding the complete list of [`ASDF.BlockHeader`](@ref) values scanned from an ASDF file, shared by reference with every [`ASDF.NDArray`](@ref)
-and [`ASDF.ChunkedNDArray`](@ref) constructed during parsing.
+A mutable container holding the complete list of [`ASDF.BlockHeader`](@ref) values scanned
+from an ASDF file, shared by reference with every [`ASDF.NDArray`](@ref) and
+[`ASDF.ChunkedNDArray`](@ref) constructed during parsing.
 
 # Reference sharing
 
-Every [`ASDF.NDArray`](@ref) created during parsing of a given file holds a reference to the same `LazyBlockHeaders` instance. When `ndarray[]` is called, it indexes into `lazy_block_headers.block_headers` using the array's zero-based `source` field:
+Every [`ASDF.NDArray`](@ref) created during parsing of a given file holds a reference to
+the same `LazyBlockHeaders` instance. When `ndarray[]` is called, it indexes into
+`lazy_block_headers.block_headers` using the array's zero-based `source` field:
 
 ```julia
 header = ndarray.lazy_block_headers.block_headers[ndarray.source + 1]
 data   = ASDF.read_block(header)
 ```
 
-Because `block_headers` is populated after all `NDArray` objects are constructed, no array needs to be updated individually when block scanning completes. The shared mutable reference propagates the result automatically.
+Because `block_headers` is populated after all `NDArray` objects are constructed, no array
+needs to be updated individually when block scanning completes. The shared mutable reference
+propagates the result automatically.
 
 # Mutability
 
-`LazyBlockHeaders` is a `mutable struct` solely to allow `block_headers` to be assigned after construction. The field is written exactly once per file load, immediately after `YAML.load` within [`ASDF.load_file`](@ref) returns. It is never modified again during normal use. Treat it as effectively immutable after [`load_file`](@ref) returns.
+`LazyBlockHeaders` is a `mutable struct` solely to allow `block_headers` to be assigned
+after construction. The field is written exactly once per file load, immediately after
+`YAML.load` within [`ASDF.load_file`](@ref) returns. It is never modified again during
+normal use. Treat it as effectively immutable after [`load_file`](@ref) returns.
 """
 mutable struct LazyBlockHeaders
     block_headers::Vector{BlockHeader}
@@ -555,14 +563,16 @@ asdf_datatype_yaml(dt::Ucs4Datatype) = ["ucs4", dt.length]
 """
     StructuredField(name::String, datatype::Union{Datatype,AsciiDatatype,Ucs4Datatype}, byteorder::Byteorder)
 
-A single named field within a [`StructuredDatatype`](@ref). Corresponds to one entry in the ASDF `datatype` list when it takes the dict form:
+A single named field within a [`StructuredDatatype`](@ref).
+Corresponds to one entry in the ASDF `datatype` list when it takes the dict form:
 
 ```yaml
 - {name: x,     datatype: float32,    byteorder: little}
 - {name: label, datatype: [ascii, 8], byteorder: little}
 ```
 
-`byteorder` specifies the byte order for this field specifically, overriding the ndarray's top-level `byteorder`. For [`AsciiDatatype`](@ref) fields, `byteorder` is stored but
+`byteorder` specifies the byte order for this field specifically, overriding the ndarray's
+top-level `byteorder`. For [`AsciiDatatype`](@ref) fields, `byteorder` is stored but
 ignored during byte-swapping since single bytes have no endianness.
 """
 struct StructuredField
@@ -574,7 +584,8 @@ end
 """
     StructuredDatatype(fields::Vector{StructuredField})
 
-An ASDF compound datatype consisting of named fields, corresponding to the list-of-dicts form of the `datatype` key in an ndarray:
+An ASDF compound datatype consisting of named fields, corresponding to
+the list-of-dicts form of the `datatype` key in an ndarray:
 
 ```yaml
 datatype:
@@ -583,7 +594,9 @@ datatype:
 - {name: label, datatype: [ascii, 4], byteorder: little}
 ```
 
-The corresponding Julia type (returned by `Base.Type`) is a `NamedTuple` with one field per entry, e.g., `@NamedTuple{x::Float32, y::Float32, label::NTuple{4,UInt8}}`. This type is `isbitstype`, so `reinterpret`, `sizeof`, and `bswap` all work correctly on it.
+The corresponding Julia type (returned by `Base.Type`) is a `NamedTuple` with one field per entry,
+e.g., `@NamedTuple{x::Float32, y::Float32, label::NTuple{4,UInt8}}`.
+This type is `isbitstype`, so `reinterpret`, `sizeof`, and `bswap` all work correctly on it.
 
 See also: [`StructuredField`](@ref), [`parse_asdf_datatype`](@ref).
 """
@@ -594,11 +607,12 @@ end
 """
     Base.Type(sd::StructuredDatatype) -> NamedTuple type
 
-Return the `NamedTuple` type corresponding to a structured ASDF datatype. Field names and types are derived from `sd.fields` in order.
+Return the `NamedTuple` type corresponding to a structured ASDF datatype.
+Field names and types are derived from `sd.fields` in order.
 
 # Example
 
-```
+```julia
 sd = StructuredDatatype([
     StructuredField("x",     Datatype_float32,  Byteorder_little),
     StructuredField("label", AsciiDatatype(4),  Byteorder_little),
@@ -616,8 +630,9 @@ end
 """
     itemsize(datatype) -> Int
 
-Number of bytes one element of `datatype` occupies in a block. ASDF, like NumPy, packs the fields of a [`StructuredDatatype`](@ref) record back to back, while the `NamedTuple` from `Type(datatype)`
-may pad them for alignment, so a record's `itemsize` can be smaller than its `sizeof`.
+Number of bytes one element of `datatype` occupies in a block. ASDF, like NumPy, packs
+the fields of a [`StructuredDatatype`](@ref) record back to back, while the `NamedTuple` from
+`Type(datatype)` may pad them for alignment, so a record's `itemsize` can be smaller than its `sizeof`.
 """
 itemsize(dt) = sizeof(Type(dt))
 itemsize(dt::StructuredDatatype) = sum(itemsize(f.datatype) for f in dt.fields; init = 0)
@@ -666,7 +681,8 @@ Parse a raw YAML datatype value into its corresponding ASDF datatype:
 - 2-element `AbstractVector` (e.g. `["ascii", 4]`) --> [`AsciiDatatype`](@ref) or [`Ucs4Datatype`](@ref)
 - `AbstractVector` of dicts --> [`StructuredDatatype`](@ref)
 
-Field-level `datatype` values within a structured dtype are parsed recursively, so `["ascii", N]` is valid as a field type.
+Field-level `datatype` values within a structured dtype are parsed recursively,
+so `["ascii", N]` is valid as a field type.
 
 This is the inverse of [`asdf_datatype_yaml`](@ref).
 """
@@ -702,7 +718,10 @@ end
 
 A lazily-materialized N-dimensional array stored in an ASDF file, either as a binary block or inline within the ASDF file.
 
-`NDArray` is the in-memory representation of an `!core/ndarray-X.Y.Z` YAML node. It holds the array's shape, type, and layout metadata, but defers reading and decompressing block data until the array is explicitly materialized by calling [`Base.getindex(ndarray::NDArray)`](@ref).
+`NDArray` is the in-memory representation of an `!core/ndarray-X.Y.Z` YAML node.
+It holds the array's shape, type, and layout metadata, but defers reading and
+decompressing block data until the array is explicitly materialized by calling
+[`Base.getindex(ndarray::NDArray)`](@ref).
 
 # Fields
 
@@ -866,7 +885,8 @@ function NDArray(
         # zero-length dimension collapses the stride of every outer dimension whose
         # product includes it down to zero, which then fails the `strides` positivity
         # check below even though no data is ever read from a zero-size array. Negative
-        # entries are left unclamped so the shape negativity check below still reports them with its own clear error message. STScI Roman L2 `.asdf` products contain such
+        # entries are left unclamped so the shape negativity check below still reports them
+        # with its own clear error message. STScI Roman L2 `.asdf` products contain such
         # zero-shape arrays (e.g. `chisq`, `dumo`) with no explicit `strides` key.
         sz = itemsize(datatype)
         strides = [sz * prod(max.(shape[(i + 1):end], 1)) for i in eachindex(shape)]
@@ -918,14 +938,29 @@ end
 """
     Base.getindex(ndarray::NDArray)
 
-Returns the fully materialized array. See [`ASDF.NDArray`](@ref) for definitions. When block-backed (`source` !== `nothing`), this reads and decompresses the block, applies offset and strides via a [`StridedViews.StridedView`](https://github.com/QuantumKitHub/StridedViews.jl), reinterprets bytes to `Type(datatype)`, and byte-swaps if `byteorder != host_byteorder`. The returned array satisfies:
+Returns the fully materialized array. See [`ASDF.NDArray`](@ref) for definitions.
+When block-backed (`source` !== `nothing`), this reads and decompresses the block, applies
+offset and strides via a [`StridedViews.StridedView`](https://github.com/QuantumKitHub/StridedViews.jl),
+reinterprets bytes to `Type(datatype)`, and byte-swaps if `byteorder != host_byteorder`.
+The returned array satisfies:
 
 ```julia
 size(result) == Tuple(reverse(ndarray.shape))
 eltype(result) == ASDF.materialized_eltype(ndarray.datatype)
 ```
 
-For the `ucs4` and `ascii` string datatypes, [`materialized_eltype`](@ref) is a thin `AbstractString` view over the characters ([`UCS4String`](@ref) / [`AsciiString`](@ref); see [`stringify_data`](@ref)). For all other datatypes, `eltype(result) == Type(ndarray.datatype)` and additionally, when the array has at least one element, `sizeof(eltype) .* strides(result) == Tuple(reverse(ndarray.strides))` along every dimension with more than one element. The exception is a structured datatype whose `NamedTuple` pads its fields for alignment: the block packs them (see [`itemsize`](@ref)), so the records are read field by field into a dense array in Julia's own layout. (A dimension of length 1 has no well-defined stride, there is no pair of adjacent elements to space apart along it, and in a zero-element array no dimension does, so `reshape`/`reinterpret` are free to report any value there; such strides are excluded from this check.)
+For the `ucs4` and `ascii` string datatypes, [`materialized_eltype`](@ref) is a thin
+`AbstractString` view over the characters ([`UCS4String`](@ref) / [`AsciiString`](@ref);
+see [`stringify_data`](@ref)). For all other datatypes, `eltype(result) == Type(ndarray.datatype)`
+and additionally, when the array has at least one element,
+`sizeof(eltype) .* strides(result) == Tuple(reverse(ndarray.strides))`
+along every dimension with more than one element.
+The exception is a structured datatype whose `NamedTuple` pads its fields for alignment:
+the block packs them (see [`itemsize`](@ref)), so the records are read field by field into a
+dense array in Julia's own layout. (A dimension of length 1 has no well-defined stride,
+there is no pair of adjacent elements to space apart along it, and in a zero-element array
+no dimension does, so `reshape`/`reinterpret` are free to report any value there; such
+strides are excluded from this check.)
 """
 function Base.getindex(ndarray::NDArray)
     if ndarray.data !== nothing
@@ -1000,7 +1035,8 @@ end
 """
     correct_byteorder(data, dt::Union{Datatype, AsciiDatatype, Ucs4Datatype}, byteorder::Byteorder)
 
-Applies any necessary byteswap to the `data` within `ndarray` after it has been reinterpreted as `Type(dt)`, where `dt = ndarray.datatype`.
+Applies any necessary byteswap to the `data` within `ndarray` after it has been
+reinterpreted as `Type(dt)`, where `dt = ndarray.datatype`.
 
 `byteorder` is the ndarray-level [`Byteorder`](@ref).
 """
@@ -1379,7 +1415,8 @@ yaml_compliant(val) = val
 """
     NDArrayChunk
 
-A positioned tile within an [`ASDF.ChunkedNDArray`](@ref), pairing an [`ASDF.NDArray`](@ref) with a zero-based origin that locates the tile in the parent array's coordinate space.
+A positioned tile within an [`ASDF.ChunkedNDArray`](@ref), pairing an [`ASDF.NDArray`](@ref)
+with a zero-based origin that locates the tile in the parent array's coordinate space.
 
 # Fields
 
@@ -1420,9 +1457,13 @@ end
 """
     ChunkedNDArray
 
-A logical N-dimensional array assembled from a collection of arbitrarily-positioned [`ASDF.NDArrayChunk`](@ref) tiles, each backed by its own binary block or inline data.
+A logical N-dimensional array assembled from a collection of arbitrarily-positioned
+[`ASDF.NDArrayChunk`](@ref) tiles, each backed by its own binary block or inline data.
 
-`ChunkedNDArray` is the in-memory representation of a `!core/chunked-ndarray-1.X.Y` YAML node. It defines the shape and element type of the full logical array, but defers all data access to the individual chunks. The full array is only allocated and populated when [`Base.getindex(ndarray::NDArray)`](@ref) is called.
+`ChunkedNDArray` is the in-memory representation of a `!core/chunked-ndarray-1.X.Y` YAML
+node. It defines the shape and element type of the full logical array, but defers all data
+access to the individual chunks. The full array is only allocated and populated when
+[`Base.getindex(ndarray::NDArray)`](@ref) is called.
 
 # Fields
 
@@ -1506,7 +1547,8 @@ _convert_tree_children(value::ChunkedNDArray, active) = NDArrayWrapper(value[]; 
 """
     ASDFFile
 
-The in-memory representation of a loaded ASDF file, combining the parsed YAML metadata tree with the binary block infrastructure needed to lazily materialize any array data it references.
+The in-memory representation of a loaded ASDF file, combining the parsed YAML metadata tree
+with the binary block infrastructure needed to lazily materialize any array data it references.
 
 # Fields
 
@@ -1516,7 +1558,10 @@ The in-memory representation of a loaded ASDF file, combining the parsed YAML me
 | `metadata`            | The fully parsed YAML tree. Keys are strings matching the top-level YAML keys. Values may be any Julia type produced by the YAML constructors, including [`ASDF.NDArray`](@ref), [`ASDF.ChunkedNDArray`](@ref), nested `Dict`s, `Vector`s, and scalars. |
 | `lazy_block_headers`  | All binary block headers found in the file, scanned once at load time. Shared by reference with every [`ASDF.NDArray`](@ref) in `metadata`, allowing them to locate and read their backing blocks on demand. |
 
-`metadata` is stored as an `OrderedDict{Any, Any}` so top-level key order is preserved. The constructor accepts any `AbstractDict` and builds this from its pairs, so a plain `Dict` may be passed directly (it adopts that `Dict`'s iteration order); an already-ordered mapping keeps its order.
+`metadata` is stored as an `OrderedDict{Any, Any}` so top-level key order is preserved. The
+constructor accepts any `AbstractDict` and builds this from its pairs, so a plain `Dict` may
+be passed directly (it adopts that `Dict`'s iteration order); an already-ordered mapping
+keeps its order.
 """
 struct ASDFFile
     filename::AbstractString
