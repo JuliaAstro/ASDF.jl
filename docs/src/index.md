@@ -28,7 +28,11 @@ using ASDF, OrderedCollections
 ASDF files are initially created as a dictionary with arbitrarily nested data:
 
 ```@example intro
-af_payload = OrderedDict("field_1" => [5, 6, 7, 8], "field_2" => ["up", "down", "left", "right"], "field_3" => OrderedDict("field_3a" => ["apple", "orange", "pear"], "field_3b" => [1.0, 2.0, 3.0]))
+af_payload = OrderedDict(
+    "field_1" => [5, 6, 7, 8],
+    "field_2" => ["up", "down", "left", "right"],
+    "field_3" => OrderedDict("field_3a" => ["apple", "orange", "pear"], "field_3b" => [1.0, 2.0, 3.0])
+)
 ```
 
 ASDF.jl is registered with [FileIO.jl](https://juliaio.github.io/FileIO.jl/stable/), so this data can be written to the ASDF file format with the generic [`save`](@ref) function:
@@ -78,7 +82,10 @@ save("intro_modified.asdf", af)
 A vector is written inline as a YAML list. Wrapping an array of any number of dimensions in an [`ASDF.NDArrayWrapper`](@ref) writes it as an ASDF ndarray, which records its datatype and shape; any array that is not a vector, including a 0-dimensional one, must be wrapped. The `inline = true` keyword stores a wrapped array as nested YAML lists, which needs at least one dimension and boolean, integer, or float elements. A wrapped array is stored as a binary block via the `inline = false` keyword (default), which can be further optimized by specifying a supported [compression algorithm](@ref ASDF.Compression) to use via the `compression` keyword:
 
 ```@example intro
-af_payload = OrderedDict("meta" => OrderedDict("my" => OrderedDict("nested" => "metadata")), "data" => ASDF.NDArrayWrapper([1, 2, 3, 4]; compression = ASDF.C_Bzip2))
+af_payload = OrderedDict(
+    "meta" => OrderedDict("my" => OrderedDict("nested" => "metadata")),
+    "data" => ASDF.NDArrayWrapper([1, 2, 3, 4]; compression = ASDF.C_Bzip2)
+)
 
 save("intro_compressed.asdf", af_payload)
 
@@ -108,7 +115,7 @@ af = load("intro_compressed.asdf")
       name: "ASDF.jl"
       author: "Erik Schnetter <schnetter@gmail.com>"
       homepage: "https://github.com/JuliaAstro/ASDF.jl"
-      version: "2.1.1"
+      version: "2.1.2"
     ...
     �BLK0   f�0xj�sq���r#ASDF BLOCK INDEX
     %YAML 1.1
@@ -125,7 +132,4 @@ af["data"][] == [1, 2, 3, 4]
 
 ## Tagged objects
 
-Packages can extend [`ASDF.to_tree`](@ref) to serialize their own Julia types
-wherever they occur in a larger ASDF document. See [Custom Julia
-types](@ref) for the conversion contract and an example combining a custom
-metadata object with a binary array.
+Packages can extend [`ASDF.to_tree`](@ref) to serialize their own Julia types wherever they occur in a larger ASDF document. See [Custom Julia types](@ref) for the conversion contract and an example combining a custom metadata object with a binary array.

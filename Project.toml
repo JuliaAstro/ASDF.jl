@@ -1,6 +1,6 @@
 name = "ASDF"
 uuid = "686f71d1-807d-59a4-a860-28280ea06d7b"
-version = "2.1.1"
+version = "2.1.2"
 authors = ["Erik Schnetter <schnetter@gmail.com>"]
 
 [workspace]
@@ -36,5 +36,5 @@ MD5 = "0.2.1"
 OrderedCollections = "1.8.1, 2"
 PkgVersion = "0.3.3"
 StridedViews = "0.2.1, 0.3, 0.4, 0.5"
-YAML = "0.4.9"
+YAML = "0.4.18"
 julia = "1.10"
