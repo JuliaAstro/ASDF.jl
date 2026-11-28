@@ -1689,12 +1689,13 @@ function info(io::IO, af::ASDFFile; max_rows = 20)
     AbstractTrees.print_tree(buf, root)
     lines = split(String(take!(buf)), '\n', keepempty = false)
 
-    return if length(lines) ≤ max_rows
+    if length(lines) ≤ max_rows
         foreach(l -> println(io, l), lines)
     else
         foreach(l -> println(io, l), Iterators.take(lines, max_rows))
         println(io, "  ⋮  (", length(lines) - max_rows, ") more rows")
     end
+                                                                                                                                                                                                                                                                                                            return
 end
 info(af; kwargs...) = info(stdout, af; kwargs...)
 
