@@ -1695,7 +1695,7 @@ function info(io::IO, af::ASDFFile; max_rows = 20)
         foreach(l -> println(io, l), Iterators.take(lines, max_rows))
         println(io, "  ⋮  (", length(lines) - max_rows, ") more rows")
     end
-                                                                                                                                                                                                                                                                                                            return
+    return
 end
 info(af; kwargs...) = info(stdout, af; kwargs...)
 
